@@ -8,8 +8,8 @@
 ;          that were in scope at the time of creation.
 
 (define (make-counter)
-  (let ((count 0)) ; environment - can't be accessed from outside the instance of 'make-counter'
-    (lambda () ; return a function - state is kept when changing the variables in the environment
+  (let ((count 0))  ; environment - can't be accessed from outside the instance of 'make-counter'
+    (lambda ()      ; return a function - state is kept when changing the variables in the environment
       (set! count (+ 1 count))
       count)))
 
@@ -27,6 +27,8 @@
 
 (newline)
 (newline)
+
+
 ;; better-counter
 
 (struct counter
