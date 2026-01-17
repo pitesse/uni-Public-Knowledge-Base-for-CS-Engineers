@@ -4,6 +4,9 @@
 ; which takes a multi-level list, i.e. a list that may contain any level of lists, and converts
 ; it into a data structure where each list is converted into a vector.
 
+
+
+
 ; E.g.
 ; The result of (multi-list->vector '(1 2 (3 4) (5 (6)) "hi" ((3) 4))))
 ; should be: '#(1 2 #(3 4) #(5 #(6)) "hi" #(#(3) 4))
@@ -19,3 +22,5 @@
   )
 
 (multi-list->vector '(1 2 (3 4) (5 (6)) "hi" ((3) 4)))
+
+(apply vector '(1 2 3 4 (1 2 3 4)))
