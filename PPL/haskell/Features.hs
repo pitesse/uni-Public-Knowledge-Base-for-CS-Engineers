@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Eta reduce" #-}
-module Ex3 where
+module PPL.Features where
 
 -- CURRYING
 -- function have only 1 parameter
@@ -166,3 +166,6 @@ hiddenByLet x y z = let a = x ‘seq‘ someFunc y
 onTheOutside x y = x ‘seq‘ someFunc y
 To strictly evaluate several values, chain applications of seq together.
 --}
+
+
+

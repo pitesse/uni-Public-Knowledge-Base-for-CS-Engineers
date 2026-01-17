@@ -4,10 +4,13 @@ import Data.Array (Array, array, (!), (//))
 import Data.Char ( ord, isAlpha, toLower )
 import Data.Map (empty, findWithDefault, insert)
 
+w1 :: String
 w1 = "banana"
 
+w2 :: String
 w2 = "abcdefg"
 
+w3 :: String
 w3 = "i love haskell"
 
 {--

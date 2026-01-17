@@ -1,7 +1,5 @@
 module Applicatives where
 
-import Functors (Result)
-
 -- if we do:
 -- :t (+) <$> Ok 3
 -- we get a function and a value both wrapped into Ok (Result), but with no way to apply

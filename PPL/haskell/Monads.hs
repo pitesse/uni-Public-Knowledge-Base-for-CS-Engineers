@@ -89,9 +89,9 @@ eval'' (Div x y) =
     mEval :: Expr -> Result Int
     mEval (Val n) = Ok n
     mEval (Div x y) = do
-    n <- mEval x
-    m <- mEval y
-    safediv n m
+                        n <- mEval x
+                        m <- mEval y
+                        safediv n m
 --}
 
 -- Let's redefine Result as a Monad
@@ -170,7 +170,8 @@ main = do
 
 -- just call 'main' in ghci, it will wait for user input
 
--- WE are the side-effect. Main handles the side-effects (reading, writing to console) through the IO monad, which 'isolates' the impure portion of the code from the rest of the 'pure' code.
+-- WE are the side-effect. Main handles the side-effects (reading, writing to console) 
+-- through the IO monad, which 'isolates' the impure portion of the code from the rest of the 'pure' code.
 
 -- Fun Fact: The IO Monad is implemented as a State Monad, where the State that get passed around is the real world!
 

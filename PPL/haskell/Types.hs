@@ -55,3 +55,4 @@ myTree = Branch (Leaf 'a') (Branch (Leaf 'b') (Leaf 'c'))
 
 -- TYPE SYNONYMS - aliases for types to improve legibility
 type MyString = [Char] -- a string is just a list of chars
+ 
