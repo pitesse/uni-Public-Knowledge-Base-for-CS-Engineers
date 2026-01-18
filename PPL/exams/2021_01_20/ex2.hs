@@ -1,4 +1,3 @@
--- HASKELL
 import Control.Monad.State
 
 -- Consider the following data structure for general binary trees:

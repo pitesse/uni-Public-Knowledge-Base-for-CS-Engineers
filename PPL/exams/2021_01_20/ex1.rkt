@@ -22,5 +22,3 @@
   )
 
 (multi-list->vector '(1 2 (3 4) (5 (6)) "hi" ((3) 4)))
-
-(apply vector '(1 2 3 4 (1 2 3 4)))
