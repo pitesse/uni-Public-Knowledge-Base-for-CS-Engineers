@@ -35,18 +35,14 @@ node_comp_dist(Parent, Elem, Children, Value) ->
     [Child ! {get_distance, Value} || {Child, _} <- Children],
     Dists = [
         receive
-            {distance, Value, Child, D} ->
-                D + Weight;
-            {not_found, Value, Child} ->
-                not_found
+            {distance, Value, Child, D} -> D + Weight;
+            {not_found, Value, Child} -> not_found
         end
      || {Child, Weight} <- Children
     ],
     FoundDists = lists:filter(fun erlang:is_integer/1, Dists),
     case FoundDists of
-        [] ->
-            Parent ! {not_found, Value, self()};
-        _ ->
-            Parent ! {distance, Value, self(), lists:min(FoundDists)}
+        [] -> Parent ! {not_found, Value, self()};
+        _ -> Parent ! {distance, Value, self(), lists:min(FoundDists)}
     end,
     node_wait(Parent, Elem, Children).

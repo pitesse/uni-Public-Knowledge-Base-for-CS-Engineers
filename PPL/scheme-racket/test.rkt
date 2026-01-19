@@ -83,13 +83,13 @@
     (display x)
     (newline)))
 
-(test-cont)           ; => 1
-(saved-cont)          ; => 2
+(test-cont)           ; => 2
 (saved-cont)          ; => 3
+(saved-cont)          ; => 4
 (define other-cont saved-cont)
-(test-cont)           ; => 1 (resets saved-cont to one)
-(other-cont)          ; => 4 (other-cont still active!)
-(saved-cont)          ; => 2
+(test-cont)           ; => 2 (resets saved-cont to one)
+(other-cont)          ; => 5 (other-cont still active!)
+(saved-cont)          ; => 3
 
 (newline)
 (displayln "For and break with macros and continuations:")

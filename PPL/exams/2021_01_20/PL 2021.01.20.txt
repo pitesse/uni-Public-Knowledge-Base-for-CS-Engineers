@@ -51,21 +51,7 @@ SOLUTIONS
     (else (apply vector (map multi-list->vector lst)))))
 
 
-2)
-mapTreeM :: Monad m => (t -> m a) -> Tree t -> m (Tree a)
-mapTreeM f Empty = return Empty
-mapTreeM f (Branch lhs v rhs) = do 
-                                   lhs' <- mapTreeM f lhs
-                                   v1 <- f v
-                                   rhs' <- mapTreeM f rhs
-                                   return (Branch lhs' v1 rhs')
-
-depth_tree t = let (State f) = mapTreeM
-                                (\v -> do cur <- getState
-                                          putState $ cur ++ [v]
-                                          getState)
-                                t
-               in snd $ f []
+x
 
 
 3)

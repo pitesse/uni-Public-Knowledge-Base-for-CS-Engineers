@@ -1,0 +1,937 @@
+ERLANG
+
+Define a function for a proxy used to avoid to send PIDs; the proxy must react to the following messages:
+
+- {remember, PID, Name}: associate the value Name with PID.
+
+- {question, Name, Data}: send a question message containing Data to the PID corresponding to the value Name (e.g. an atom), like in PID ! {question, Data}
+
+- {answer, Name, Data}: send an answer message containing Data to the PID corresponding to the value Name (e.g. an atom), like in PID ! {answer, Data}
+
+
+3)
+proxy(Table) ->
+    receive
+        {question, Name, Data} ->
+            #{Name := Id} = Table,
+            Id ! {question, Data},
+            proxy(Table);
+        {answer, Name, Data} ->
+            #{Name := Id} = Table,
+            Id ! {answer, Data},
+            proxy(Table);
+        {remember, PID, Name} ->
+            proxy(Table#{Name => PID})
+    end.
+
+
+
+Ex 3
+ERLANG:
+Consider the apply operation (i.e.<*>) in Haskell's Applicative class.
+Define a parallel <*> for Erlang's lists.
+
+Ex 3
+
+runit(Proc, F, X) -> 
+    Proc ! {self(), F(X)}.
+pmap(F, L) ->
+    W = lists:map(fun(X) -> 
+                          spawn(?MODULE, runit, [self(), F, X]) 
+                  end, L),
+    lists:map(fun (P) ->
+                      receive
+                          {P, V} -> V
+                      end
+              end, W).
+
+pappl(FL, L) ->
+    lists:foldl(fun (X,Y) -> Y ++ X end, [], pmap(fun(F) -> pmap(F, L) end, FL)).
+
+    Exercise 3, Erlang (11 pts)
+Create a function node_wait that implements nodes in a tree-like topology. Each node, which is a
+separate agent, keeps track of its parent and children (which can be zero or more), and contains a value.
+An integer weight is associated to each edge between parent and child.
+A node waits for two kind of messages:
+• {register_child, ...}, which adds a new child to the node (replace the dots with appropriate values),
+• {get_distance, Value}, which causes the recipient to search for Value among its children, by
+interacting with them through appropriate messages. When the value is found, the recipient
+answers with a message containing the minimum distance between it and the node containing
+"Value", considering the sum of the weights of the edges to be traversed. If the value is not found,
+the recipient answers with an appropriate message. While a node is searching for a value among
+its children, it may not accept any new children registrations. E.g., if we send {get_distance, a} to
+the root process, it answers with the minimum distance between the root and the closest node
+containing the atom a (which is 0 if a is in the root).
+
+Es 3
+node_wait(Parent, Elem, Children) ->
+receive
+{register_child, Child, Weight} ->
+node_wait(Parent, Elem, [{Child, Weight} | Children]);
+{get_distance, Value} -> if
+Value == Elem ->
+Parent ! {distance, Value, self(), 0},
+node_wait(Parent, Elem, Children);
+true ->
+node_comp_dist(Parent, Elem, Children, Value)
+end
+end.
+node_comp_dist(Parent, Elem, Children, Value) ->
+[Child ! {get_distance, Value} || {Child, _} <- Children],
+Dists = [receive
+{distance, Value, Child, D} ->
+D + Weight;
+{not_found, Value, Child} ->
+not_found
+end || {Child, Weight} <- Children],
+FoundDists = lists:filter(fun erlang:is_integer/1, Dists),
+case FoundDists of
+[] ->
+Parent ! {not_found, Value, self()};
+_ ->
+Parent ! {distance, Value, self(), lists:min(FoundDists)}
+end,
+node_wait(Parent, Elem, Children).
+
+Exercise 3, Erlang (10 pts)
+Consider a main process which takes two lists: one of function names, and one of lists of parameters (the
+first element of with contains the parameters for the first function, and so forth). For each function, the
+main process must spawn a worker process, passing to it the corresponding argument list. If one of the
+workers fails for some reason, the main process must crea
+
+Es 3
+listmlink([], [], Pids) -> Pids;
+listmlink([F|Fs], [D|Ds], Pids) ->
+Pid = spawn_link(?MODULE, F, D),
+listmlink(Fs, Ds, Pids#{Pid => {F,D}}).
+master(Functions, Arguments) ->
+process_flag(trap_exit, true),
+Workers = listmlink(Functions, Arguments, #{}),
+master_loop(Workers, length(Functions)).
+master_loop(Workers, Count) ->
+receive
+{'EXIT', _, normal} ->
+if
+Count =:= 1 -> ok;
+true -> master_loop(Workers, Count-1)
+end;
+{'EXIT', Child, _} ->
+#{Child := {F,D}} = Workers,
+Pid = spawn_link(?MODULE, F, D),
+master_loop(Workers#{Pid => {F,D}}, Count)
+end.
+
+
+Exercise 3, Erlang (8 pts)
+Define a function which takes two list of PIDs [x1, x2, ...], [y1, y2, ...], having the same length, and a
+function f, and creates a different "broker" process for managing the interaction between each pair of
+processes xi and yi.
+At start, the broker process i must send its PID to xi and yi with a message {broker, PID}. Then, the
+broker i will receive messages {from, PID, data, D} from xi or yi, and it must send to the other one an
+analogous message, but with the broker PID and data D modified by applying f to it.
+A special stop message can be sent to a broker i, that will end its activity sending the same message to xi
+and yi.
+
+Es 3
+broker(X, Y, F) ->
+X ! {broker, self()},
+Y ! {broker, self()},
+receive
+{from, X, data, D} ->
+Y ! {from, self(), data, F(D)},
+broker(X, Y, F);
+{from, Y, data, D} ->
+X ! {from, self(), data, F(D)},
+broker(X, Y, F);
+stop ->
+X ! stop,
+Y ! stop,
+ok
+end.
+twins([],_,_) ->
+ok;
+twins([X|Xs],[Y|Ys],F) ->
+spawn(?MODULE, broker, [X, Y, F]),
+twins(Xs, Ys, F).
+
+Exercise 3, Erlang (12 pts)
+Create a distributed hash table with separate chaining. The hash table will consist of an agent for each
+bucket, and a master agent that stores the buckets’ PIDs and acts as a middleware between them and the
+user. Actual key/value pairs are stored into the bucket agents.
+The middleware agent must be implemented by a function called hashtable_spawn that takes as its
+arguments (1) the hash function and (2) the number of buckets. When executed, hashtable_spawn
+spawns the bucket nodes, and starts listening for queries from the user. Such queries can be of two kinds:
+• Insert: {insert, Key, Value} inserts a new element into the hash table, or updates it if an
+element with the same key exists;
+• Lookup: {lookup, Key, RecipientPid} sends to the agent with PID “RecipientPid” a
+message of the form {found, Value}, where Value is the value associated with the given key, if
+any. If no such value exists, it sends the message not_found.
+The following code:
+main() ->
+HT = spawn(?MODULE, hashtable_spawn, [fun(Key) -> Key rem 7 end, 7]),
+HT ! {insert, 15, "Apple"},
+HT ! {insert, 8, "Orange"},
+timer:sleep(500),
+HT ! {lookup, 8, self()},
+receive
+{found, A1} -> io:format("~s~n", [A1])
+end,
+HT ! {insert, 8, "Pineapple"},
+timer:sleep(500),
+HT ! {lookup, 8, self()},
+receive
+{found, A2} -> io:format("~s~n", [A2])
+end.
+should print the following:
+Orange
+Pineapple
+
+Es 3
+hashtable_spawn(HashFun, NBuckets) ->
+BucketPids = [spawn(?MODULE, bucket, [[]]) || _ <- lists:seq(0, NBuckets)],
+hashtable_loop(HashFun, BucketPids).
+hashtable_loop(HashFun, BucketPids) ->
+receive
+{insert, Key, Value} ->
+lists:nth(HashFun(Key) + 1, BucketPids) ! {insert, Key, Value},
+hashtable_loop(HashFun, BucketPids);
+{lookup, Key, AnswerPid} ->
+lists:nth(HashFun(Key) + 1, BucketPids) ! {lookup, Key, AnswerPid},
+hashtable_loop(HashFun, BucketPids)
+end.
+bucket(Content) ->
+receive
+{insert, Key, Value} ->
+NewContent = lists:keystore(Key, 1, Content, {Key, Value}),
+bucket(NewContent);
+{lookup, Key, AnswerPid} ->
+case lists:keyfind(Key, 1, Content) of
+false ->
+AnswerPid ! not_found;
+{_, Value} ->
+AnswerPid ! {found, Value}
+end,
+bucket(Content)
+end.
+%% You may replace calls to lists:keystore/4 and lists:keyfind/3 with calls to the following functions:
+keystore_first(Key, [{TupleKey, _} | TupleTail], NewValue) when Key == TupleKey ->
+[{Key, NewValue} | TupleTail];
+keystore_first(Key, [Tuple | TupleTail], NewValue) ->
+[Tuple | keystore_first(Key, TupleTail, NewValue)];
+keystore_first(Key, [], NewValue) ->
+[{Key, NewValue}].
+keyfind_first(Key, [{TupleKey, TupleValue} | _]) when Key == TupleKey ->
+{TupleKey, TupleValue};
+keyfind_first(Key, [_ | TupleTail]) ->
+keyfind_first(Key, TupleTail);
+keyfind_first(_, []) ->
+false.
+
+Exercise 3, Erlang (12 pts)
+Define a parallel lexer, which takes as input a string x and a chunk size n, and translates all the words in
+the strings to atoms, sending to each worker a chunk of x of size n (the last chunk could be shorter than
+n). You can assume that the words in the string are separated only by space characters (they can be more
+than one - the ASCII code for ' ' is 32); it is ok also to split words, if they overlap on different chunks.
+E.g.
+plex("this is a nice test", 6) returns [[this,i],[s,a,ni],[ce,te],[st]]
+For you convenience, you can use the library functions:
+• lists:sublist(List, Position, Size) which returns the sublist of List of size Size from
+position Position (starting at 1);
+• list_to_atom(Word) which translates the string Word into an atom.
+
+Es 3
+split(List, Size, Pos, End) when Pos < End ->
+[lists:sublist(List, Pos, Size)] ++ split(List, Size, Pos+Size, End);
+split(_, _, _, _) -> [].
+lex([X|Xs], []) when X =:= 32 -> % 32 is ' '
+lex(Xs, []);
+lex([X|Xs], Word) when X =:= 32 ->
+[list_to_atom(Word)] ++ lex(Xs, []);
+lex([X|Xs], Word) ->
+lex(Xs, Word++[X]);
+lex([], []) ->
+[];
+lex([], Word) ->
+[list_to_atom(Word)].
+run(Pid, Data) ->
+Pid!{self(), lex(Data, [])}.
+plex(List, Size) ->
+Part = split(List, Size, 1, length(List)),
+W = lists:map(fun(X) ->
+spawn(?MODULE, run, [self(), X])
+lists:map(fun (P) ->
+end, Part),
+receive
+{P, V} -> V
+end
+end, W).
+
+Exercise 3, Erlang (10 pts)
+Define a program tripart which takes a list, two values x and y, with x < y, and three functions, taking
+one argument which must be a list.
+• tripart first partitions the list in three sublists, one containing values that are less than both x and
+y, one containing values v such that x ≤ v ≤ y, and one containing values that are greater than both
+x and y.
+• Three processes are then spawned in parallel, running the three given functions and passing the
+three sublists in order (i.e. the first function must work on the first sublist and so on).
+• Lastly, the program must wait the termination of the three processes in the spawning order,
+assuming that each one will return the pair {P, V}, where P is its PID and V the resulting value.
+• tripart must return the three resulting values in a list, with the resulting values in the same order
+as the corresponding sublists.
+
+Es 3
+helper([X|L],P1,P2,L1,L2,L3) when (X < P1) and (X < P2) -> helper(L,P1,P2,[X|L1],L2,L3);
+helper([X|L],P1,P2,L1,L2,L3) when (X >= P1) and (X =< P2) -> helper(L,P1,P2,L1,[X|L2],L3);
+helper([X|L],P1,P2,L1,L2,L3) when (X > P1) and (X > P2) -> helper(L,P1,P2,L1,L2,[X|L3]);
+helper([],_,_,L1,L2,L3) -> [L1,L2,L3].
+part(L,X,Y) -> helper(L,X,Y,[],[],[]).
+tripart(L,X,Y,F1,F2,F3) ->
+[D1,D2,D3] = part(L,X,Y),
+P1 = spawn(?MODULE, F1, [D1]),
+P2 = spawn(?MODULE, F2, [D2]),
+P3 = spawn(?MODULE, F3, [D3]),
+receive
+{P1, V1} ->
+receive
+{P2, V2} ->
+receive
+{P3, V3} ->
+[V1,V2,V3]
+end
+end
+end.
+
+Exercise 3, Erlang (8 pts)
+We want to implement an interface to a server protocol, for managing requests that are lists of functions
+of one argument and lists of data on which the functions are called.
+The interface main function is called multiple_query and gets a list of functions FunL, and a list of data,
+DataL, of course of the same size.
+The protocol works as follows (assume that there is a registered server called master_server):
+1. First, we ask the master server for a list of slave processes that will perform the computation. The
+request has the following form:
+{slaves_request, {identity, <id_of_the_caller>}, {quantity, <number_of_needed_slaves>}}
+2. The answer has the following form:
+{slaves_id, <list_of_ids_of_slave_processes>}
+3. Then, the library sends the following requests to the slave processes:
+{compute_request, {identity, <id_of_the_caller>}, <function>, <data>},
+where <function> is one of the elements of FunL, and <data> is the corresponding element of
+DataL.
+4. Each process sends the result of its computation with a message:
+{compute_result, {identity, <slave_id>}, {value, <result_value>}}
+5. multiple_query ends by returning the list of the computed results, that must be ordered
+according to FunL and DataL.
+If you want, you may use lists:zip/2 and lists:zip3/3, that are the standard zip operations on 2 or 3 lists,
+respectively.
+
+Es 3
+multiple_query(FunL, DataL) ->
+master_server ! {slaves_request,
+{identity, self()},
+{quantity, length(FunL)}},
+receive
+{slaves_id, Slaves} -> ok
+end,
+[ S ! {compute_request, {identity, self()}, F, D} || {S, F, D} <- lists:zip3(Slaves, FunL, DataL)],
+[ receive
+{compute_result, {identity, S}, {value, V}} -> V
+end || S <- Slaves ].
+
+Exercise 3, Erlang (12 pts)
+We want to implement a parallel foldl, parfold(F, L, N), where the binary operator F is associative, and N
+is the number of parallel processes in which to split the evaluation of the fold. Being F associative,
+parfold can evaluate foldl on the N partitions of L in parallel. Notice that there is no starting (or
+accumulating) value, differently from the standard foldl.
+You may use the following libray functions:
+lists:foldl(<function>, <starting value>, <list>)
+lists:sublist(<list>, <init>, <length>), which returns the sublist of <list> starting at position
+<init> and of length <length>, where the first position of a list is 1.
+
+Es 3
+partition(L, N) ->
+M = length(L),
+Chunk = M div N,
+End = M - Chunk*(N-1),
+parthelp(L, N, 1, Chunk, End, []).
+parthelp(L, 1, P, _, E, Res) ->
+Res ++ [lists:sublist(L, P, E)];
+parthelp(L, N, P, C, E, Res) ->
+R = lists:sublist(L, P, C),
+parthelp(L, N-1, P+C, C, E, Res ++ [R]).
+parfold(F, L, N) ->
+Ls = partition(L, N),
+W = [spawn(?MODULE, dofold, [self(), F, X]) || X <- Ls],
+[R|Rs] = [receive {P, V} -> V end || P <- W],
+lists:foldl(F, R, Rs).
+dofold(Proc, F, [X|Xs]) ->
+Proc ! {self(), lists:foldl(F, X, Xs)}.
+
+Exercise 3, Erlang (11 pts)
+Consider the following non-deterministic finite state automaton (FSA):
+a b
+q0
+q1
+b
+b b c
+q2 q3 q4
+Write a concurrent Erlang program that simulates the previous FSA, where each state is implemented as a process.
+
+Ex 3
+q0() ->
+receive
+end, q0().
+{S, [b|Xs]} -> q1 ! {S, Xs}, q2 ! {S, Xs};
+{S, [a|Xs]} -> q0 ! {S, Xs}
+q1() ->
+receive
+end, q1().
+{S, [b|Xs]} -> q0 ! {S, Xs}
+q2() ->
+receive
+end, q2().
+{S, [b|Xs]} -> q3 ! {S, Xs}
+q3() ->
+receive
+end, q3().
+{S, [c|Xs]} -> q4 ! {S, Xs}
+q4() ->
+receive
+end, q4().
+{S, []} -> io:format("~w accepted~n", [S])
+start() ->
+register(q0, spawn(fun() -> q0() end)), % to avoid exporting qs
+register(q1, spawn(fun() -> q1() end)),
+register(q2, spawn(fun() -> q2() end)),
+register(q3, spawn(fun() -> q3() end)),
+register(q4, spawn(fun() -> q4() end)).
+read_string(S) ->
+q0 ! {S, S}, ok.
+
+Exercise 3, Erlang (11 pts)
+Consider the following non-deterministic pushdown automaton (PDA), where Z is the initial stack symbol and 
+represents the empty string:
+Write a concurrent Erlang program that simulates only the given PDA, and each state of the PDA is implemented
+as an independent parallel process.
+
+Ex 3
+q0() ->
+receive
+{S, [a|Xs], [z|T]} -> q1 ! {S, Xs, [a,z] ++ T}
+end,
+q0().
+q1() ->
+receive
+{S, [a|Xs], [a|T]} -> q1 ! {S, Xs, [a,a] ++ T};
+{S, [b|Xs], [a|T]} -> q2 ! {S, Xs, T}, q3 ! {S, Xs, [a|T]}
+end,
+q1().
+q2() ->
+receive
+{S, [b|Xs], [a|T]} -> q2 ! {S, Xs, T};
+{S, Xs, [z|T]} -> q5 ! {S, Xs, T}
+end,
+q2().
+q3() ->
+receive
+{S, [b|Xs], [a|T]} -> q4 ! {S, Xs, T}
+end,
+q3().
+q4() ->
+receive
+{S, [b|Xs], [a|T]} -> q3 ! {S, Xs, [a|T]};
+{S, Xs, [z|T]} -> q5 ! {S, Xs, T}
+end,
+q4().
+q5() ->
+receive
+{S, [], _} -> io:format("~w accepted~n", [S])
+end,
+q5().
+start() ->
+register(q0, spawn(fun() -> q0() end)), % to avoid exporting qs
+register(q1, spawn(fun() -> q1() end)),
+register(q2, spawn(fun() -> q2() end)),
+register(q3, spawn(fun() -> q3() end)),
+register(q4, spawn(fun() -> q4() end)),
+register(q5, spawn(fun() -> q5() end)).
+stop() ->
+unregister(q0),
+unregister(q1),
+unregister(q2),
+unregister(q3),
+unregister(q4),
+unregister(q5).
+read_string(S) ->
+q0 ! {S, S, [z]}, ok.
+
+Exercise 3, Erlang (11 pts)
+Consider the following implementation of mergesort and write a parallel version of it.
+mergesort([L]) -> [L];
+mergesort(L) ->
+{L1, L2} = lists:split(length(L) div 2, L),
+merge(mergesort(L1), mergesort(L2)).
+merge(L1, L2) -> merge(L1, L2, []).
+merge([], L2, A) -> A ++ L2;
+merge(L1, [], A) -> A ++ L1;
+merge([H1|T1], [H2|T2], A) when H2 >= H1 -> merge(T1, [H2|T2], A ++ [H1]);
+merge([H1|T1], [H2|T2], A) when H1 > H2 -> merge([H1|T1], T2, A ++ [H2]).
+
+Ex 3
+mergesortp(L) ->
+Me = self(),
+msp(Me, L),
+receive
+{Me, R} -> R
+end.
+msp(Pid, [L]) ->
+Pid ! {self(), [L]};
+msp(Pid, L) ->
+{L1, L2} = lists:split(length(L) div 2, L),
+Me = self(),
+Pid1 = spawn(fun() -> msp(Me, L1) end),
+Pid2 = spawn(fun() -> msp(Me, L2) end),
+receive
+{Pid1, Sorted1} ->
+receive
+{Pid2, Sorted2} ->
+Pid ! {self(), merge(Sorted1, Sorted2)}
+end
+end.
+
+Exercise 3, Erlang (11 pts)
+1. Define a “deep reverse” function, which takes a “deep” list, i.e. a list containing possibly lists of any
+depths, and returns its reverse.
+E.g. deeprev([1,2,[3,[4,5]],[6]]) is [[6],[[5,4],3],2,1].
+2. Define a parallel version of the previous function.
+
+Ex 3
+deeprev([]) -> [];
+deeprev([X|Xs]) -> V = deeprev(X),
+Vs = deeprev(Xs),
+Vs ++ [V];
+deeprev(X) -> X.
+deeprevp(L) ->
+P = self(),
+dp(P, L),
+receive
+{P, R} -> R
+end.
+dp(Pid, []) -> Pid ! {self(), []};
+dp(Pid, [X|Xs]) ->
+Self = self(),
+P1 = spawn(fun() -> dp(Self, X) end),
+P2 = spawn(fun() -> dp(Self, Xs) end),
+receive
+{P1, V} ->
+receive
+{P2, Vs} ->
+Pid ! {Self, Vs ++ [V]}
+end
+end;
+dp(Pid, X) -> Pid ! {self(), X}.
+
+Exercise 3, Erlang (11 pts)
+Consider the infinite list of binary trees of Exercise 2: instead of infinite lists, we want to create processes which
+return the current element of the "virtual infinite list" with the message next, and terminate with the message stop.
+1. Define a function btrees to create a process corresponding to the infinite tree of Exercise 2.1.
+2. Define a function incbtrees to create a process corresponding to the infinite tree of Exercise 2.2.
+Notes: for security reasons, processes must only answer to their creating process; to define trees, you can use
+suitable tuples with atoms as customary in Erlang (e.g. {branch, {leaf, 1}, {leaf, 1}}).
+
+Ex 3
+btrees_body(T, Pid) ->
+receive
+next ->
+T1 = {branch, T, T},
+Pid ! T1,
+btrees_body(T1, Pid);
+stop ->
+T
+end.
+btrees(N, Pid) ->
+spawn(?MODULE, btrees_body, [{leaf, N}, Pid]).
+inctree({leaf, X}) ->
+{leaf, X+1};
+inctree({branch, X, Y}) ->
+{branch, inctree(X), inctree(Y)}.
+incbtrees_body(T, Pid) ->
+receive
+next ->
+T1 = inctree(T),
+T2 = {branch, T1, T1},
+Pid ! T2,
+incbtrees_body(T2, Pid);
+stop ->
+T
+end.
+incbtrees(Pid) ->
+spawn(?MODULE, incbtrees_body, [{leaf, 0}, Pid]).
+
+Exercise 3, Erlang (11 pts)
+Define a condition-var-manager process that receives a list of initial values and a list of the corresponding
+conditions (unary predicates), both of the same length, and spawns for each ordered pair of value and condition a
+process that updates its value only when the new value satisfies the condition.
+The manager can receive the following messages:
+- {update, F} where F is a unary function that must be applied to all the saved values to obtain the new values (only
+if the corresponding condition holds);
+- print which makes each process print its current value;
+- stop which stops the manager and all its spawned processes.
+
+Ex 3
+condvar_mgr(Vs, Conds) ->
+Pids = [
+spawn_link(fun() ->
+condvar(V, C)
+end)
+|| {V, C} <- lists:zip(Vs, Conds)
+],
+condvar_mgr_loop(Pids).
+condvar_mgr_loop(Pids) ->
+receive
+stop ->
+exit(ok);
+Msg ->
+[Pid ! Msg || Pid <- Pids],
+condvar_mgr_loop(Pids)
+end.
+condvar(V, C) ->
+receive
+{update, Fn} ->
+V1 = Fn(V),
+case C(V1) of
+true -> condvar(V1, C);
+false -> condvar(V, C)
+end;
+print ->
+io:format("~p~n", [V]),
+condvar(V, C)
+end.
+
+Exercise 3, Erlang (11 pts)
+Consider a list L of tasks, where each task is encoded as a function having only one parameter: a PID P. When a
+task is called, it runs some operations and then sends back the results to P, in this form: {result, <Task_PID>,
+<Result_value>}; a task could also fail for some errors.
+Define a server which takes L and runs in parallel all the tasks in it, returning the list of the results (the order is not
+important). Note: in case of failure, every task should be restarted only once; if it fails twice, its result should be
+represented with the atom bug.
+Utilities: you can use from the standard libraries the following functions: maps:from_list(<List of {Key, Value}>),
+which takes a list of pairs and builds the corresponding map, and maps:values(<Map>), which is its inverse.
+
+Ex 3
+getres(Fs) ->
+Self = self(),
+process_flag(trap_exit, true),
+Pids = maps:from_list([{spawn_link(fun() -> F(Self) end), {F, wait}} || F <- Fs]),
+getres_loop(Pids, length(Fs)).
+getres_loop(Pids, 0) ->
+[R || {done, R} <- maps:values(Pids)];
+getres_loop(Pids, Waiting) ->
+receive
+{result, Pid, R} ->
+getres_loop(Pids#{Pid := {done, R}}, Waiting - 1);
+{'EXIT', Pid, Reason} when Reason /= normal ->
+#{Pid := {F, Status}} = Pids,
+Self = self(),
+case Status of
+restart ->
+getres_loop(Pids#{Pid := {done, bug}}, Waiting - 1);
+_ ->
+NewPid = spawn_link(fun() -> F(Self) end),
+getres_loop(Pids#{NewPid => {F, restart}}, Waiting)
+end
+end.
+
+Exercise 3, Erlang (11 pts)
+Pino wants to create a Erlang program which takes two lists of data [x1, x2, ..], [y1, y2, ...] and a list of binary
+functions [f1, f2, ...], and evaluates these functions in parallel, passing them the respective parameters, to obtain
+[f1(x1, y1), f2(x2, y2), …].
+To this end, Pino tries to use ChatGPT, obtaining the result shown in the next page.
+-module(parallel_apply).
+-export([parallel_apply/3, worker/2, collector/2]).
+% Entry function to start the parallel processing
+parallel_apply(List1, List2, FunList) ->
+CollectorPid = spawn(fun() -> collector([], length(FunList)) end),
+spawn_workers(List1, List2, FunList, CollectorPid),
+receive
+{results, Results} -> Results
+end.
+% Spawn worker processes for each element pair and function
+spawn_workers([H1|T1], [H2|T2], [F|Fs], CollectorPid) ->
+spawn(fun() -> worker({F, H1, H2}, CollectorPid) end),
+spawn_workers(T1, T2, Fs, CollectorPid);
+spawn_workers([], [], [], _) -> done.
+% Worker process to apply function to pair of elements
+worker({F, A, B}, CollectorPid) ->
+Result = F(A, B),
+CollectorPid ! {result, Result}.
+% Collector process to gather all results
+collector(Results, 0) ->
+% Send the final results back to the parent process
+ParentPid = self(),
+ParentPid ! {results, lists:reverse(Results)};
+collector(Results, N) ->
+receive
+{result, Result} ->
+collector([Result | Results], N - 1)
+end.
+1) Is the previous code correct? If not, explain why.
+2) Implement you own version of the exercise to make Pino happy.
+
+Ex 3
+1) there are many errors: e.g. the collector get its PID instead of the one of its parent; the collector also assumes that the
+results from the worker will arrive in the correct order, so it doesn’t keep PIDs for the workers.
+2)
+parallel_apply(List1, List2, FunList) ->
+W = lists:map(fun(X) -> spawn(?MODULE, worker, [X, self()]) end, zip3(List1, List2, FunList)),
+lists:map(fun (P) ->
+receive
+{P, V} -> V
+end
+end, W).
+worker({A, B, F}, CollectorPid) ->
+CollectorPid ! {self(), F(A,B)}.
+% also available in lists
+zip3([A|As], [B|Bs], [F|Fs]) -> [{A, B, F} | zip3(As, Bs, Fs)];
+zip3([], _, _) -> [];
+zip3(_, [], _) -> [];
+zip3(_, _, []) -> [].
+
+Exercise 3, Erlang (11 pts)
+Define the main function of a broker process for centralized PID-less interaction among processes. The broker
+must respond to these messages:
+• {new, Pid, Id} to bind the local broker identifier Id to the PID Pid;
+• {send, Id, Msg} to send Msg to the process having the local broker identifier Id;
+• {delete_id, Id} to delete the local broker identifier binding for Id;
+• {delete_pid, Pid} to delete the local data for PID Pid;
+• {broadcast, Msg} to send Msg to all the processes known by the broker;
+• stop to stop the broker.
+You can use the following OTP functions, if you need them:
+maps:remove(Key, Map), to remove Key from Map
+maps:filtermap(F/2, Map), which is a filter, where F/2 takes a pair (Key, Value) and returns a Boolean
+maps:foreach(F/2, Map), which runs F/2 on all the pairs (Key, Value) in Map.
+
+Ex 3
+broker(Map) ->
+receive
+{send, Id, Msg} ->
+#{Id := Pid} = Map,
+Pid ! Msg,
+broker(Map);
+{new, Pid, Id} ->
+broker(Map#{Id => Pid});
+{delete_id, Id} ->
+broker(maps:remove(Id, Map));
+{delete_pid, Pid} ->
+broker(maps:filtermap(fun (_,Y) ->
+Y =/= Pid
+end, Map));
+{broadcast, Msg} ->
+maps:foreach(fun (_,V) ->
+V ! Msg
+end, Map),
+broker(Map);
+stop ->
+ok
+end.
+
+Exercise 3, Erlang (11 pts)
+Consider the delay-force construct presented in class to implement call-by-need in Scheme.
+We want to implement an Erlang version, where promises are Erlang processes.
+The interface of the construct is the following:
+• delay(<function>), where <function> is a thunk -- we cannot pass arbitrary code as in Scheme, so we need
+a thunk: why?
+• force(<Pid>), where <Pid> is the process id of the promise.
+
+Ex 3
+% this takes a thunk, because Erlang’s macro system is too weak
+delay(F) ->
+spawn(?MODULE, promise, [F, false]).
+promise(F, B) ->
+receive
+{value, Pid} ->
+if
+B -> Pid ! {self(), F}, promise(F, B);
+true ->
+V = F(),
+Pid ! {self(), V},
+promise(V, true)
+end
+end.
+force(Pid) ->
+Pid ! {value, self()},
+receive
+{Pid, V} -> V
+end.
+
+Exercise 3, Erlang (11 pts)
+We want to simulate a 6-side dice, where each face is implemented by a process running the following procedure,
+where X represents the value of the face:
+dice_face(X) ->
+timer:sleep(rand:uniform(40)),
+receive
+stop -> bye;
+PID ->
+PID ! X,
+dice_face(X)
+end.
+Write a procedure which simulates a dice: it first creates the processes for the faces, and waits for a value: the first
+one arriving in the message queue is the result of the roll. All the other messages must be purged from the queue,
+and the processes stopped.
+
+Ex 3
+flush() ->
+receive
+_ -> flush()
+after
+0 -> true end.
+dice() ->
+Ps = [spawn(fun () -> dice_face(X) end) || X <- [1,2,3,4,5,6]],
+[P ! self() || P <- Ps],
+receive
+V ->
+ok
+end,
+[P ! stop || P <- Ps],
+flush(),
+V.
+
+Exercise 3, Erlang (11 pts)
+Consider the set of all non-null prefixes of a list (e.g. for [1, 2, 3] the prefixes are {[1], [1, 2], [1, 2, 3]}).
+Write a function check_pref which takes two lists, T and L, then creates a set of processes P for each prefix of the
+list L – such processes must receive a list and control if it matches the one associated to the process: if yes, it must
+return the atom yes, otherwise the atom no. Then, check_pref uses the processes in P to check if T is a prefix of L.
+
+Ex 3
+pre([], R) -> R;
+pre([X|Xs], []) -> pre(Xs, [[X]]);
+pre([X|Xs], [R|Rs]) -> pre(Xs, [R ++ [X] | [R|Rs]]).
+prefix(L) -> pre(L, []).
+check_list(L, Master) ->
+receive
+L -> Master ! yes;
+_ -> Master ! no
+end,
+check_list(L, Master).
+check_pref(T, L) ->
+I = self(),
+Pids = [spawn(fun () -> check_list(X, I) end) || X <- prefix(L)],
+[P ! T || P <- Pids],
+lists:member(yes, [receive X -> X end || _ <- Pids]).
+
+Exercise 3, Erlang (11 pts)
+1) Write a function: deepmaprev(F, List), that applies a function F to every non-list element in a possibly deep list,
+and reverses the list structure at every level.
+Example:
+> deepmaprev(fun(X) -> X+1 end, [[0,1],2,3,[4,[5]]]).
+[[[6],5],4,3,[2,1]]
+2) Write a parallel version, that behaves exactly like deepmaprev/2 but spawns a separate process to handle each
+top-level element in the input list, then collects and assembles the results in the correct order.
+
+Ex 3
+deepmaprev(F, L) when is_list(L) ->
+lists:reverse([deepmaprev(F, X) || X <- L]);
+deepmaprev(F, X) ->
+F(X).
+deepmaprev_par(F, L) when is_list(L) ->
+Parent = self(),
+Pids = [spawn(fun() ->
+Result = deepmaprev(F, X),
+Parent ! {self(), Result}
+end) || X <- L],
+gather_results(Pids, []).
+gather_results([], Acc) ->
+Acc;
+gather_results([Pid | Rest], Acc) ->
+receive
+{Pid, Result} ->
+gather_results(Rest, [Result | Acc])
+end.
+
+Exercise 3, Erlang
+Define a parallel filter and map operation, which has, together with the function for the map, two predicates
+(respectively called pre-condition and post-condition) for filtering the list values: the first one filters the values to
+be processed (i.e. it does not map the values that falsify the pre-condition), while the second one is used to filter the
+results.
+E.g. filtermap(
+fun (X) -> % pre-condition
+X > 3
+end,
+fun (X) -> X*X
+% map operation
+end,
+fun (X) -> % post-condition
+X < 20
+end,
+[1, 2, 3, 4, 5]).
+should return [16]
+
+Ex 3
+runit(Proc, F, Post, X) ->
+V = F(X),
+case Post(V) of
+true ->
+Proc ! {self(), V};
+false -> Proc ! {self(), none}
+end.
+recv(none) ->
+none;
+recv(Pid) ->
+receive
+{Pid, V} -> V
+end.
+filtermap(Pre, F, Post, L) ->
+W = [case Pre(X) of
+true ->
+spawn(?MODULE, runit, [self(), F, Post, X]);
+false ->
+none
+end || X <- L],
+lists:filter(fun (X) -> not (X == none) end, lists:map(fun recv/1, W)).
+
+Exercise 3, Erlang
+Consider a main process which takes a list of tuples of the form {Fun, Params}, where:
+• Fun is a function (an atom bound in the current module).
+• Params is the list of arguments for that function.
+The main process must:
+1. Spawn a supervisor process for each {Fun, Params} tuple.
+2. Each supervisor process must spawn a worker running Fun(Params).
+3. If the worker dies for any reason, the supervisor must restart it up to 3 times. If it fails 3 times, the
+4. supervisor stops.
+The main process finishes only when all supervisors terminate.
+
+Ex 3
+start(FunParamsList) ->
+Parent = self(),
+[spawn(?MODULE, supervisor, [Parent, Fun, Params, 3])
+|| {Fun, Params} <- FunParamsList],
+wait_all(length(FunParamsList)),
+io:format("All supervisors finished.~n").
+wait_all(0) -> ok;
+wait_all(N) ->
+receive
+{done, _} -> wait_all(N - 1)
+end.
+supervisor(Parent, Fun, Params, 0) ->
+io:format("Supervisor: ~p(~p) failed 3 times, giving up.~n", [Fun, Params]),
+Parent ! {done, self()};
+supervisor(Parent, Fun, Params, Attempts) ->
+process_flag(trap_exit, true),
+Pid = spawn_link(?MODULE, worker, [self(), Fun, Params]),
+receive
+%% Success path (worker sends its result)
+{ok, Pid, Result} ->
+io:format("Worker ~p(~p) finished successfully: ~p~n",
+[Fun, Params, Result]),
+Parent ! {done, self()};
+%% If the worker exits normally before/after {ok,...} arrives
+{'EXIT', Pid, normal} ->
+io:format("Worker ~p(~p) finished successfully.~n", [Fun, Params]),
+Parent ! {done, self()};
+%% Crash path: restart
+{'EXIT', Pid, Reason} ->
+io:format("Worker ~p(~p) crashed with ~p. Restarting... (~p left)~n",
+[Fun, Params, Reason, Attempts - 1]),
+supervisor(Parent, Fun, Params, Attempts - 1)
+end.
+worker(Supervisor, Fun, Params) ->
+Result = apply(?MODULE, Fun, Params),
+Supervisor ! {ok, self(), Result}.

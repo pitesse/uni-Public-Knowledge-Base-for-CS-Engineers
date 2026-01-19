@@ -1,0 +1,755 @@
+HASKELL
+
+Consider the following data structure for general binary trees:
+
+  data Tree a = Empty | Branch (Tree a) a (Tree a) deriving (Show, Eq)
+
+Using the State monad as seen in class:
+
+1) Define a monadic map for Tree, called mapTreeM.
+
+2) Use mapTreeM to define a function which takes a tree and returns a tree containing list of elements that are all the data found in the original tree in a depth-first visit.
+
+E.g.
+From the tree: (Branch (Branch Empty 1 Empty) 2 (Branch (Branch Empty 3 Empty) 4 Empty))
+we obtain:
+Branch (Branch Empty [1] Empty) [1,2] (Branch (Branch Empty [1,2,3] Empty) [1,2,3,4] Empty)
+
+2)
+mapTreeM :: Monad m => (t -> m a) -> Tree t -> m (Tree a)
+mapTreeM f Empty = return Empty
+mapTreeM f (Branch lhs v rhs) = do 
+                                   lhs' <- mapTreeM f lhs
+                                   v1 <- f v
+                                   rhs' <- mapTreeM f rhs
+                                   return (Branch lhs' v1 rhs')
+
+depth_tree t = let (State f) = mapTreeM
+                                (\v -> do cur <- getState
+                                          putState $ cur ++ [v]
+                                          getState)
+                                t
+               in snd $ f []
+
+Ex 2
+HASKELL:
+A multi-valued map (Multimap) is a data structure that associates keys of
+a type k to zero or more values of type v.  A Multimap can be represented as
+a list of 'Multinodes', as defined below. Each multinode contains a unique key
+and a non-empty list of values associated to it.
+
+data Multinode k v = Multinode { key :: k
+                               , values :: [v]
+                               }
+
+data Multimap k v = Multimap [Multinode k v]
+
+1) Implement the following functions that manipulate a Multimap:
+
+insert :: Eq k => k -> v -> Multimap k v -> Multimap k v
+insert key val m returns a new Multimap identical to m, except val is added to the values associated to k.
+
+lookup :: Eq k => k -> Multimap k v -> [v]
+lookup key m returns the list of values associated to key in m
+
+remove :: Eq v => v -> Multimap k v -> Multimap k v
+remove val m returns a new Multimap identical to m, but without all values equal to val
+
+Ex 2
+
+empty :: Multimap k v
+empty = Multimap []
+
+insert :: Eq k => k -> v -> Multimap k v -> Multimap k v
+insert key val (Multimap []) = Multimap [Multinode key [val]]
+insert key val (Multimap (m@(Multinode nk nvals):ms))
+  | nk == key = Multimap ((Multinode nk (val:nvals)):ms)
+  | otherwise = let Multimap p = insert key val (Multimap ms)
+                in Multimap (m:p)
+
+lookup :: Eq k => k -> Multimap k v -> [v]
+lookup _ (Multimap []) = []
+lookup key (Multimap ((Multinode nk nvals):ms))
+  | nk == key = nvals
+  | otherwise = lookup key (Multimap ms)
+
+remove :: Eq v => v -> Multimap k v -> Multimap k v
+remove val (Multimap ms) = Multimap $ foldr mapfilter [] ms
+  where mapfilter (Multinode nk nvals) rest =
+          let filtered = filter (/= val) nvals
+          in if null filtered
+             then rest
+             else (Multinode nk filtered):rest
+
+instance Functor (Multimap k) where
+  fmap f (Multimap m) = Multimap (fmap (mapNode f) m) where
+    mapNode f (Multinode k v) = Multinode k (fmap f v)
+
+
+Exercise 2, Haskell (11 pts)
+Define a data-type called BTT which implements trees that can be binary or ternary, and where every
+node contains a value, but the empty tree (Nil). Note: there must not be unary nodes, like leaves.
+1) Make BTT an instance of Functor and Foldable.
+2) Define a concatenation for BTT, with the following constraints:
+• If one of the operands is a binary node, such node must become ternary, and the other operand
+will become the added subtree (e.g. if the binary node is the left operand, the rightmost node of
+the new ternary node will be the right operand).
+• If both the operands are ternary nodes, the right operand must be appened on the right of the left
+operand, by recursively calling concatenation.
+3) Make BTT an instance of Applicative.
+
+Es 2
+data BTT a = Nil | B a (BTT a)(BTT a) | T a (BTT a)(BTT a)(BTT a) deriving (Eq, Show)
+instance Functor BTT where
+fmap f Nil = Nil
+fmap f (B a l r) = B (f a)(fmap f l)(fmap f r)
+fmap f (T a l c r) = T (f a)(fmap f l)(fmap f c)(fmap f r)
+instance Foldable BTT where
+foldr f i Nil = i
+foldr f i (B x l r) = f x $ foldr f (foldr f i r) l
+foldr f i (T x l c r) = f x $ foldr f (foldr f (foldr f i r) c) l
+x <++> Nil = x
+Nil <++> x = x
+(B x l r) <++> y = (T x l r y)
+y <++> (B x l r) = (T x y l r)
+(T x l c r) <++> v@(T x' l' c' r') = (T x l c (r <++> v))
+ltconcat t = foldr (<++>) Nil t
+ltconcmap f t = ltconcat $ fmap f t
+instance Applicative BTT where
+pure x = (B x Nil Nil)
+x <*> y = ltconcmap (\f -> fmap f y) x
+
+Exercise 2, Haskell (11 pts)
+1) Define a "generalized" zip function which takes a finite list of possibly infinite lists, and returns a
+possibly infinite list containing a list of all the first elements, followed by a list of all the second elements,
+and so on.
+E.g. gzip [[1,2,3],[4,5,6],[7,8,9,10]] ==> [[1,4,7],[2,5,8],[3,6,9]]
+2) Given an input like in 1), define a function which returns the possibly infinite list of the sum of the two
+greatest elements in the same positions of the lists.
+E.g. sum_two_greatest [[1,8,3],[4,5,6],[7,8,9],[10,2,3]] ==> [17,16,15]
+
+Es 2
+gzip xs = if null (filter null xs) then (map head xs) : gzip (map tail xs) else []
+store_two_greatest v (x,y) | v > x = (v,y)
+store_two_greatest v (x,y) | x >= v && v > y = (x,v)
+store_two_greatest v (x,y) = (x,y)
+two_greatest (x:y:xs) = foldr store_two_greatest (if x > y then (x,y) else (y,x)) xs
+sum_two_greatest xs = [ let (x,y) = two_greatest v
+in x+y | v <- gzip xs]
+
+Exercise 2, Haskell (11 pts)
+Consider a Slist data structure for lists that store their length. Define the Slist data structure, and make it
+an instance of Foldable, Functor, Applicative and Monad.
+
+Es 2
+data Slist a = Slist Int [a] deriving (Show, Eq)
+makeSlist v = Slist (length v) v
+instance Foldable Slist where
+foldr f i (Slist n xs) = foldr f i xs
+instance Functor Slist where
+fmap f (Slist n xs) = Slist n (fmap f xs)
+instance Applicative Slist where
+pure v = Slist 1 (pure v)
+(Slist x fs) <*> (Slist y xs) = Slist (x*y) (fs <*> xs)
+instance Monad Slist where
+fail _ = Slist 0 []
+(Slist n xs) >>= f = makeSlist (xs >>= (\x -> let Slist n xs = f x
+in xs))
+
+Exercise 2, Haskell (10 pts)
+Consider a Tvtl (two-values/two-lists) data structure, which can store either two values of a given type, or
+two lists of the same type.
+Define the Tvtl data structure, and make it an instance of Functor, Foldable, and Applicative.
+
+Es 2
+data Tvtl a = Tv a a | Tl [a] [a] deriving (Show, Eq)
+instance Functor Tvtl where
+fmap f (Tv x y) = Tv (f x) (f y)
+fmap f (Tl x y) = Tl (fmap f x) (fmap f y)
+instance Foldable Tvtl where
+foldr f i (Tv x y) = f x (f y i)
+foldr f i (Tl x y) = foldr f (foldr f i y) x
+(Tv x y) +++ (Tv z w) = Tl [x,y] [y,w]
+(Tv x y) +++ (Tl l r) = Tl (x:l) (y:r)
+(Tl l r) +++ (Tv x y) = Tl (l++[x]) (r++[y])
+(Tl l r) +++ (Tl x y) = Tl (l++x) (r++y)
+tvtlconcat t = foldr (+++) (Tl [][]) t
+tvtlcmap f t = tvtlconcat $ fmap f t
+instance Applicative Tvtl where
+pure x = Tl [x] []
+x <*> y = tvtlcmap (\f -> fmap f y) x
+
+Exercise 2, Haskell (12 pts)
+Consider a data structure Gtree for general trees, i.e. trees containg some data in each node, and a
+variable number of children.
+1. Define the Gtree data structure.
+2. 3. Define gtree2list, i.e. a function which translates a Gtree to a list.
+Make Gtree an instance of Functor, Foldable, and Applicative.
+
+Es 2
+data Gtree a = Tnil | Gtree a [Gtree a] deriving Show
+gtree2list :: Gtree a -> [a]
+gtree2list Tnil = []
+gtree2list (Gtree x xs) = x : concatMap gtree2list xs
+instance Functor Gtree where
+fmap f Tnil = Tnil
+fmap f (Gtree x xs) = Gtree (f x) (fmap (fmap f) xs)
+instance Foldable Gtree where
+foldr f i t = foldr f i $ gtree2list t
+Tnil +++ x = x
+x +++ Tnil = x
+(Gtree x xs) +++ (Gtree y ys) = Gtree y ((Gtree x []:xs) ++ ys)
+gtconcat = foldr (+++) Tnil
+gtconcatMap f t = gtconcat $ fmap f t
+instance Applicative Gtree where
+pure x = Gtree x []
+x <*> y = gtconcatMap (\f -> fmap f y) x
+
+Exercise 2, Haskell (12 pts)
+Consider the "fancy pair" data type (called Fpair), which encodes a pair of the same type a, and may
+optionally have another component of some "showable" type b, e.g. the character '$'.
+Define Fpair, parametric with respect to both a and b.
+1) Make Fpair an instance of Show, where the implementation of show of a fancy pair e.g. encoding
+(x, y, '$') must return the string "[x$y]", where x is the string representation of x and y of y. If the third
+component is not available, the standard representation is "[x, y]".
+2) Make Fpair an instance of Eq — of course the component of type b does not influence the actual
+value, being only part of the representation, so pairs with different representations could be equal.
+3) Make Fpair an instance of Functor, Applicative and Foldable.
+
+Es 2
+data Fpair s a = Fpair a a s | Pair a a
+instance (Show a, Show s) => Show (Fpair s a) where
+show (Fpair x y t) = "[" ++ (show x) ++ (show t) ++ (show y) ++ "]"
+show (Pair x y) = "[" ++ (show x) ++ ", " ++ (show y) ++ "]"
+simplify (Fpair x y _) = (x, y)
+simplify (Pair x y) = (x, y)
+instance (Eq a) => Eq (Fpair s a) where
+x == y = (simplify x) == (simplify y)
+instance Functor (Fpair s) where
+fmap f (Fpair x y t) = (Fpair (f x) (f y) t)
+fmap f (Pair x y) = (Pair (f x) (f y))
+instance Applicative (Fpair s) where
+pure x = (Pair x x)
+(Fpair f g _) <*> (Fpair x y v) = Fpair (f x) (g y) v
+(Pair f g) <*> (Fpair x y v) = Fpair (f x) (g y) v
+(Fpair f g v) <*> (Pair x y) = Fpair (f x) (g y) v
+(Pair f g) <*> (Pair x y) = Pair (f x) (g y)
+instance Foldable (Fpair s) where
+foldr f i (Fpair x y _) = (f x (f y i))
+foldr f i (Pair x y) = (f x (f y i))
+
+Exercise 2, Haskell (14 pts)
+A deque, short for double-ended queue, is a list-like data structure that supports efficient element
+insertion and removal from both its head and its tail. Recall that Haskell lists, however, only support O(1)
+insertion and removal from their head.
+Implement a deque data type in Haskell by using two lists: the first one containing elements from the
+initial part of the list, and the second one containing elements form the final part of the list, reversed.
+In this way, elements can be inserted/removed from the first list when pushing to/popping the deque's
+head, and from the second list when pushing to/popping the deque's tail.
+1) Write a data type declaration for Deque.
+2) Implement the following functions:
+• toList: takes a Deque and converts it to a list
+• fromList: takes a list and converts it to a Deque
+• pushFront: pushes a new element to a Deque's head
+• popFront: pops the first element of a Deque, returning a tuple with the popped element and the
+new Deque
+• pushBack: pushes a new element to the end of a Deque
+• popBack: pops the last element of a Deque, returning a tuple with the popped element and the new
+Deque
+3) Make Deque an instance of Eq and Show.
+4) Make Deque an instance of Functor, Foldable, Applicative and Monad.
+You may rely on instances of the above classes for plain lists.
+
+s 2
+data Deque a = Deque [a] [a]
+toList :: Deque a -> [a]
+toList (Deque front back) = front ++ reverse back
+fromList :: [a] -> Deque a
+fromList l = let half = length l `div` 2
+in Deque (take half l) (reverse $ drop half l)
+instance (Eq a) => Eq (Deque a) where
+d1 == d2 = toList d1 == toList d2
+instance (Show a) => Show (Deque a) where
+show d = show $ toList d
+pushFront :: a -> Deque a -> Deque a
+pushFront x (Deque front back) = Deque (x:front) back
+popFront :: Deque a -> (a, Deque a)
+popFront (Deque (x:front) back) = (x, Deque front back)
+popFront (Deque [] []) = error "Pop on empty Deque!"
+popFront (Deque [] [y]) = (y, Deque [] [])
+popFront (Deque [] back) = popFront $ fromList back
+pushBack :: a -> Deque a -> Deque a
+pushBack x (Deque front back) = Deque front (x:back)
+popBack :: Deque a -> (a, Deque a)
+popBack (Deque front (x:back)) = (x, Deque front back)
+popBack (Deque [] []) = error "Pop on empty Deque!"
+popBack (Deque [x] []) = (x, Deque [] [])
+popBack (Deque front []) = popBack $ fromList front
+instance Functor Deque where
+fmap f (Deque front back) = Deque (map f front) (map f back)
+instance Foldable Deque where
+foldr f e = foldr f e . toList
+instance Applicative Deque where
+pure x = Deque [x] []
+df <*> dx = fromList $ toList df <*> toList dx
+instance Monad Deque where
+d >>= f = fromList $ concatMap (toList . f) $ toList d
+
+Exercise 2, Haskell (10 pts)
+We want to implement a binary tree where in each node is stored data, together with the number of nodes
+contained in the subtree of which the current node is root.
+1. Define the data structure.
+2. Make it an instance of Functor, Foldable, and Applicative.
+
+Es 2
+data Ctree a = Cnil | Ctree a Int (Ctree a) (Ctree a) deriving (Show, Eq)
+cvalue Cnil = 0
+cvalue (Ctree _ x _ _) = x
+cnode x t1 t2 = Ctree x ((cvalue t1) + (cvalue t2) + 1) t1 t2
+cleaf x = cnode x Cnil Cnil
+instance Functor Ctree where
+fmap f Cnil = Cnil
+fmap f (Ctree v c t1 t2) = Ctree (f v) c (fmap f t1)(fmap f t2)
+instance Foldable Ctree where
+foldr f i Cnil = i
+foldr f i (Ctree x _ t1 t2) = f x $ foldr f (foldr f i t2) t1
+x +++ Cnil = x
+Cnil +++ x = x
+(Ctree x v t1 t2) +++ t = cnode x t1 (t2 +++ t)
+ttconcat = foldr (+++) Cnil
+ttconcmap f t = ttconcat $ fmap f t
+instance Applicative Ctree where
+pure = cleaf
+x <*> y = ttconcmap (\f -> fmap f y) x
+
+Exercise 2, Haskell (11 pts)
+We want to define a data structure for the tape of a Turing machine: Tape is a parametric data structure with
+respect to the tape content, and must be made of three components:
+1. the portion of the tape that is on the left of the head;
+2. the symbol on which the head is positioned;
+3. the portion of the tape that is on the right of the head.
+Also, consider that the machine has a concept of "blank" symbols, so you need to add another component in the
+data definition to store the symbol used to represent the blank in the parameter type.
+1. Define Tape.
+2. Make Tape an instance of Show and Eq, considering that two tapes contain the same values if their stored
+values are the same and in the same order, regardless of the position of their heads.
+3. 4. Define the two functions left and right, to move the position of the head on the left and on the right.
+Make Tape an instance of Functor and Applicative.
+
+Ex 2
+data Tape a = Tape [a] a [a] a -- the last one stands for 'blank'
+instance Show a => Show (Tape a) where
+show (Tape x c y b) = show (reverse x) ++ (show c) ++ show y
+instance Eq a => Eq (Tape a) where
+(Tape x c y _) == (Tape x' c' y' _) = (x ++ [c] ++ y) == (x' ++ [c'] ++ y')
+left :: Tape a -> Tape a
+left (Tape [] c y b) = Tape [] b (c:y) b
+left (Tape (x:xs) c y b) = Tape xs x (c:y) b
+right :: Tape a -> Tape a
+right (Tape x c [] b) = Tape (c:x) b [] b
+right (Tape x c (y:ys) b) = Tape (c:x) y ys b
+instance Functor Tape where
+fmap f (Tape x c y b) = Tape (fmap f x) (f c) (fmap f y) (f b)
+instance Applicative Tape where
+pure x = Tape [] x [] x
+-- zipwise apply
+(Tape fx fc fy fb) <*> (Tape x c y b) = Tape (zipApp fx x) (fc c) (zipApp fy y) (fb b)
+where zipApp x y = [f x | (f,x) <- zip x y]
+
+Exercise 2, Haskell (11 pts)
+We want to define a data structure for binary trees, called BBtree, where in each node are stored two values of the
+same type. Write the following:
+1. The BBtree data definition.
+2. A function bb2list which takes a BBtree and returns a list with the contents of the tree.
+3. Make BBtree an instance of Functor and Foldable.
+4. Make BBtree an instance of Applicative, using a “zip-like” approach, i.e. every function in the first
+argument of <*> will be applied only once to the corresponding element in the second argument of <*>.
+5. Define a function bbmax, together with its signature, which returns the maximum element stored in the
+BBtree, if present, or Nothing if the data structure is empty.
+
+Ex 2
+data BBtree a = BBnil | BBtree (BBtree a) a a (BBtree a) deriving (Eq, Show)
+bbleaf x y = (BBtree BBnil x y BBnil)
+bb2list BBnil = []
+bb2list (BBtree t1 x y t2) = (bb2list t1) ++ [x,y] ++ (bb2list t2)
+instance Functor BBtree where
+fmap f BBnil = BBnil
+fmap f (BBtree t1 x y t2) = BBtree (fmap f t1) (f x) (f y) (fmap f t2)
+instance Foldable BBtree where
+foldr f i BBnil = i
+foldr f i (BBtree t1 x y t2) = foldr f (f x (f y (foldr f i t2))) t1
+instance Applicative BBtree where
+pure x = bbleaf x x
+BBnil <*> y = BBnil
+x <*> BBnil = BBnil
+(BBtree t1 x y t2) <*> (BBtree t1' x' y' t2') =
+(BBtree (t1 <*> t1') (x x') (y y') (t2 <*> t2'))
+bbmax :: (Ord a) => BBtree a -> Maybe a
+bbmax BBnil = Nothing
+bbmax t@(BBtree t1 x y t2) = Just $ foldr max x t
+-- Note: it can be done more easily with
+-- maximum :: (Foldable t, Ord a) => t a -> a
+-- which is already provided by foldable:
+bbmaxf BBnil = Nothing
+bbmaxf t = Just $ maximum t
+
+Exercise 2, Haskell (11 pts)
+Define a partitioned list data structure, called Part, storing three elements:
+1. a pivot value,
+2. a list of elements that are all less than or equal to the pivot, and
+3. a list of all the other elements.
+Implement the following utility functions, writing their types:
+• checkpart, which takes a Part and returns true if it is valid, false otherwise;
+• part2list, which takes a Part and returns a list of all the elements in it;
+• list2part, which takes a pivot value and a list, and returns a Part;
+Make Part an instance of Foldable and Functor, if possible. If not, explain why.
+
+Ex 2
+data Part a = Part [a] a [a] deriving Show
+checkpart :: Ord a => Part a -> Bool
+checkpart (Part x a y) = null (filter (\v -> (v > a)) x) &&
+null (filter (\v -> (v <= a)) y)
+part2list :: Part a -> [a]
+part2list (Part x a y) = x ++ [a] ++ y
+list2part :: (Ord a) => a -> [a] -> Part a
+list2part a l = l2ph a l [] [] where
+l2ph a [] l r = Part l a r
+l2ph a (x:xs) l r | x <= a = l2ph a xs (x:l) r
+l2ph a (x:xs) l r = l2ph a xs l (x:r)
+Foldable is easy:
+instance Foldable Part where
+foldr f i p = foldr f i (part2list p)
+Functor: A trivial implementation like the following
+instance Functor Part where
+fmap f (Part x a y) = Part (fmap f x) (f a) (fmap f y)
+is not correct, because if we take e.g.
+p1 = Part [1,2,3] 4 [5,6,6]; p2 = fmap (10 -) p1
+p2 is not a correct partition. We could use list2part to fix the solution, but this requires that, if f :: (a -> b), b must be
+an instance of Ord.
+
+Exercise 2, Haskell (11 pts)
+1. 2. Define a data structure, called D2L, to store lists of possibly depth two, e.g. like [1,2,[3,4],5,[6]].
+Implement a flatten function which takes a D2L and returns a flat list containing all the stored values in it
+in the same order.
+3. Make D2L an instance of Functor, Foldable, Applicative.
+
+Ex 2
+data D2L a = D2Nil | D2Cons1 a (D2L a) | D2Cons2 [a] (D2L a) deriving (Show, Eq)
+flatten D2Nil = []
+flatten (D2Cons1 x xs) = (x : flatten xs)
+flatten (D2Cons2 xs ys) = xs ++ flatten ys
+instance Functor D2L where
+fmap f D2Nil = D2Nil
+fmap f (D2Cons1 x xs) = D2Cons1 (f x) (fmap f xs)
+fmap f (D2Cons2 xs ys) = D2Cons2 (fmap f xs) (fmap f ys)
+instance Foldable D2L where
+foldr f i D2Nil = i
+foldr f i (D2Cons1 x xs) = f x (foldr f i xs)
+foldr f i (D2Cons2 xs ys) = (foldr f (foldr f i ys) xs)
+D2Nil +++ t = t
+t +++ D2Nil = t
+(D2Cons1 x xs) +++ t = D2Cons1 x (xs +++ t)
+(D2Cons2 xs ys) +++ t = D2Cons2 xs (ys +++ t)
+instance Applicative D2L where
+pure x = D2Cons1 x D2Nil
+fs <*> xs = foldr (+++) D2Nil (fmap (\f -> fmap f xs) fs)
+
+Exercise 2, Haskell (11 pts)
+Consider the binary tree data structure as seen in class.
+1. Define a function btrees which takes a value x and returns an infinite list of binary trees, where:
+1. all the leaves contain x,
+2. each tree is complete,
+3. the first tree is a single leaf, and each tree has one level more than its previous one in the list.
+2. Define an infinite list of binary trees, which is like the previous one, but the first leaf contains the integer 1,
+and each subsequent tree contains leaves that have the value of the previous one incremented by one.
+E.g. [Leaf 1, (Branch (Leaf 2)(Leaf 2), ...]
+3. Define an infinite list containing the count of nodes of the trees in the infinite list of the previous point.
+E.g. [1, 3, ...]
+Write the signatures of all the functions you define.
+
+Ex 2
+data Btree a = Leaf a | Branch (Btree a)(Btree a) deriving (Show, Eq)
+instance Functor Btree where
+fmap f (Leaf x) = Leaf (f x)
+fmap f (Branch x y) = Branch (fmap f x) (fmap f y)
+addLevel :: Btree a -> Btree a
+addLevel t = Branch t t
+btrees :: a -> [(Btree a)]
+btrees x = (Leaf x) : [ addLevel t | t <- btrees x]
+incBtrees :: [Btree Integer]
+incBtrees = (Leaf 1) : [ addLevel $ fmap (+1) t | t <- incBtrees]
+counts :: [Integer]
+counts = map (\x -> 2^x - 1) [1..]
+
+Exercise 2, Haskell (11 pts)
+Consider the following type of expressions, containing variables of some type a, constants that are integers, and a
+some kind of binary operator called Op.
+data Expr a = Var a | Const Int | Op (Expr a) (Expr a)
+1) Make it an instance of Functor, Applicative, and Monad.
+2) Using an example, show what the >>= operator does in your implementation.
+
+Ex 2
+instance Functor Expr where
+fmap _ (Const x) = Const x
+fmap g (Var x) = Var (g x)
+fmap g (Op a b) = Op (fmap g a) (fmap g b)
+instance Applicative Expr where
+pure = Var
+_ <*> Const x = Const x
+Const x <*> _ = Const x
+Var f <*> Var x = Var (f x)
+Var f <*> Op x y = Op (fmap f x) (fmap f y)
+Op f g <*> x = Op (f <*> x) (g <*> x)
+instance Monad Expr where
+Const x >>= _ = Const x
+Var x >>= f = f x
+Op a b >>= f = Op (a >>= f) (b >>= f)
+Example:
+Var 3 >>= \x -> Var (x*2)
+result: Var 6
+Op (Var 1) (Var 2) >>= \x -> Var (x + 1)
+result: Op (Var 2) (Var 3)
+
+Exercise 2, Haskell (11 pts)
+Consider the following datatype definition.
+data F b a = F (b -> b) a | Null
+1) Make F an instance of Functor, Applicative, and Monad.
+2) Using an example, show what >>= does in your implementation.
+
+Ex 2
+Note: This data structure is basically a combination of State and Maybe, where the State pair is brought out of the function.
+instance Functor (F x) where
+fmap f (F g t) = F g (f t)
+fmap _ Null = Null
+instance Applicative (F x) where
+pure = F id
+Null <*> _ = Null
+_ <*> Null = Null
+(F f x) <*> (F g y) = F (f . g) (x y)
+instance Monad (F x) where
+Null >>= _ = Null
+F f x >>= g = case g x of
+Null -> Null
+F f' x' -> F (f . f') x'
+-- Example
+runit (F f x) s = (f s, x)
+ex = F (\x -> 2*x) 5 >>= \x -> pure (x+1)
+runit ex 1 -- result: (2,6)
+
+Exercise 2, Haskell (12 pts)
+Consider the following datatype definition.
+data W x y = W ([x] -> [y])
+Make W an instance of Functor, Applicative, and Monad.
+
+Ex 2
+instance Functor (W x) where
+fmap f (W g) = W ((fmap f) . g)
+instance Applicative (W x) where
+pure t = W (\x -> fmap (\_ -> t) x)
+(W g) <*> (W h) = W (\x -> let f' = g x
+h' = h x
+in f' <*> h')
+instance Monad (W x) where
+(W g) >>= f = W (\xs ->
+concatMap (\y -> let W h = f y
+in h xs)
+(g xs))
+
+Exercise 2, Haskell (11 pts)
+Consider the following datatype definition.
+data T x y z = T (x -> y -> z)
+Make T an instance of Functor, Applicative, and Monad. (Hint: follow the types.)
+
+Ex 2
+instance Functor (T x y) where
+fmap f (T g) = T (\x y -> f (g x y))
+instance Applicative (T x y) where
+pure z = T (\_ _ -> z)
+(T f) <*> (T g) = T (\x y -> f x y (g x y))
+instance Monad (T x y) where
+(T g) >>= f = T (\x y -> let (T t) = f $ g x y
+in t x y)
+
+Exercise 2, Haskell (11 pts)
+Consider the following data structure, implementing a "double content" list:
+data Llist b a = Nod a b (Llist b a) | Nul deriving (Show, Eq)
+1) Make Llist an instance of Functor and Foldable.
+2) We cannot make it an instance of Applicative, as it is: why? Make Llist Bool an instance of Applicative.
+
+Ex 2
+instance Functor (Llist b) where
+fmap f Nul = Nul
+fmap f (Nod x y s) = Nod (f x) y (fmap f s)
+instance Foldable (Llist b) where
+foldr f z Nul = z
+foldr f z (Nod x y s) = f x (foldr f z s)
+Nul +++ y = y
+y +++ Nul = y
+(Nod x y s) +++ s' = Nod x y (s +++ s')
+tcconcat :: Foldable t => t (Llist b a) -> Llist b a
+tcconcat = foldr (+++) Nul
+-- We cannot implement pure, because we need a value of type b for it
+instance Applicative (Llist Bool) where
+pure x = Nod x True Nul -- in this case we know that b = Bool, and we chose True as the default value
+fs <*> xs = tcconcat $ fmap (\f -> fmap f xs) fs
+
+Exercise 2, Haskell (11 pts)
+Consider the following data definition:
+data T a = A | B (T a) a | C a a deriving (Show, Eq)
+1) Describe the data structure.
+2) Make T an instance of Functor, Foldable, and Applicative.
+
+Ex 2
+data T a = A | B (T a) a | C a a deriving (Show, Eq)
+-- T is parametric sum type with a Null (A), a list-like cons (B), and a pair (C)
+instance Functor T where
+fmap f A = A
+fmap f (B x y) = B (fmap f x) (f y)
+fmap f (C x y) = C (f x) (f y)
+instance Foldable T where
+foldr f i A = i
+foldr f i (B x y) = f y (foldr f i x)
+foldr f i (C x y) = f x (f y i)
+A +++ t = t
+t +++ A = t
+(B x y) +++ t = B (x +++ t) y
+(C x y) +++ t = (B (B A y) x) +++ t
+instance Applicative T where
+pure = B A
+A <*> x = A
+(B t f) <*> y = (fmap f y) +++ (t <*> y)
+(C f1 f2) <*> t = (fmap f1 t) +++ (fmap f2 t)
+
+Exercise 2, Haskell (11 pts)
+A simply-linked circular list (called Clist from now on) is a list in which the last node points to the first node. It is
+sometimes useful to have a “sentinel” last node, i.e. a node that does not contain data. The sentinel is used e.g. to
+check if we have traversed the whole list. An empty list contains only the sentinel node, that points to itself.
+Consider the following implementation of circular lists:
+data Clist a = Node a (Clist a) | End (Clist a) -- End is the Sentinel node
+instance (Show a) => Show (Clist a) where
+show (End _) = "..."
+show (Node v next) = show v ++ ", " ++ show next
+instance (Eq a) => Eq (Clist a) where
+End _ == End _ = True
+(Node x next) == (Node x' next') = (x == x') && next == next'
+_ == _ = False
+1) Explain why Clist does not derive Show and Eq in its definition.
+2) Make Clist an instance of Functor and Applicative. NB: you cannot translate Clist to standard lists and back, in
+the implementation of the requested methods.
+
+Ex 2
+2)
+1) The standard implementations of show and == do not terminate.
+instance Functor Clist where
+fmap f (Node x next) = let first = Node (f x) $ fmap' f next first
+in first where
+fmap' f (End x) first = End first
+fmap' f (Node x next) first = Node (f x) $ fmap' f next first
+instance Applicative Clist where
+pure x = let first = Node x $ End first
+in first
+(Node f fs) <*> (Node x xs) = let first = Node (f x) $ apply' fs xs first
+in first where
+apply' (End t) _ first = End first
+apply' _ (End t) first = End first
+apply' (Node f fs) (Node x xs) first = Node (f x) $ apply' fs xs first
+
+Exercise 2, Haskell (11 pts)
+Consider the following datatype definition.
+data PTL a = P a a | T a a a | L [PTL a] deriving (Show, Eq)
+Describe its possible usage, then make PTL an instance of Functor, Foldable, and Applicative.
+
+Ex 2
+-- PTL is a sum type of a pair, a triple, and a recursive list of PTL. It could be used to store complex tree-like structures.
+instance Functor PTL where
+fmap f (P x y) = P (f x) (f y)
+fmap f (T x y z) = T (f x) (f y) (f z)
+fmap f (L xs) = L (map (fmap f) xs)
+instance Foldable PTL where
+foldr f z (P x y) = f x (f y z)
+foldr f z (T x y w) = f x (f y (f w z))
+foldr f z (L xs) = foldr (\ptl acc -> foldr f acc ptl) z xs
+instance Applicative PTL where
+pure x = P x x
+(P f g) <*> (P x y) = P (f x) (g y)
+(T f g h) <*> (T x y z) = T (f x) (g y) (h z)
+(L fs) <*> (L xs) = L (apList fs xs)
+where
+apList [] _ = []
+apList _ [] = []
+apList (f:fs) (x:xs) = (f <*> x) : apList fs xs
+
+Exercise 2, Haskell
+Hamming numbers are the numbers whose only prime divisors are 2, 3, and 5. Formally, a Hamming number n is
+an integer of the form n = 2i 3j 5k, for i, j, k natural numbers.
+Define the infinite list of Hamming numbers, with type hamming :: [Integer].
+
+Ex 2
+-- trivial version:
+isHamming :: Integer -> Bool
+isHamming n = red n == 1
+where
+red x
+| x `mod` 5 == 0 = red (x `div` 5)
+| x `mod` 3 == 0 = red (x `div` 3)
+| x `mod` 2 == 0 = red (x `div` 2)
+| otherwise = x
+hammingSimple = filter isHamming [1..]
+-- more efficient version:
+merge xs@(x:xt) ys@(y:yt)
+| x < y = x : merge xt ys
+| x > y = y : merge xs yt
+| otherwise = x : merge xt yt
+merge [] ys = ys
+merge xs [] = xs
+hamming = 1 : merge (map (2*) hamming)
+(merge (map (3*) hamming)
+(map (5*) hamming))
+
+Exercise 2, Haskell
+Define a data-type called QTT (for Quaternary-Ternary Trees), where nodes can be either ternary or quaternary,
+and each node contains a value. The empty tree Nil is also allowed. Note: there must not be unary or binary
+nodes.
+1. Make QTT an instance of Functor and Foldable.
+2. Define a binary merge operation for QTT, with the following constraints:
+• If one of the operands is a ternary node, it must become quaternary, and the other operand will
+become the fourth child.
+• If both operands are quaternary nodes, then the right operand must be merged into the rightmost
+child of the left operand (recursively).
+3. Make QTT an instance of Applicative..
+
+Ex 2
+data QTT a
+= Nil
+| Ternary a (QTT a) (QTT a) (QTT a)
+| Quaternary a (QTT a) (QTT a) (QTT a) (QTT a)
+deriving (Show, Eq)
+instance Functor QTT where
+fmap _ Nil = Nil
+fmap f (Ternary x l m r) =
+Ternary (f x) (fmap f l) (fmap f m) (fmap f r)
+fmap f (Quaternary x a b c d) =
+Quaternary (f x) (fmap f a) (fmap f b) (fmap f c) (fmap f d)
+instance Foldable QTT where
+foldr _ z Nil = z
+foldr f z (Ternary x l m r) =
+f x (foldr f (foldr f (foldr f z r) m) l)
+foldr f z (Quaternary x a b c d) =
+f x (foldr f (foldr f (foldr f (foldr f z d) c) b) a)
+merge :: QTT a -> QTT a -> QTT a
+merge Nil t = t
+merge t Nil = t
+merge (Ternary x l m r) t =
+Quaternary x l m r t
+merge t (Ternary x l m r) =
+Quaternary x t l m r
+merge (Quaternary x a b c d) t =
+Quaternary x a b c (merge d t)
+tconcat :: QTT (QTT a) -> QTT a
+tconcat = foldr merge Nil
+tconcmap :: (a -> QTT b) -> QTT a -> QTT b
+tconcmap f t = tconcat $ fmap f t
+instance Applicative QTT where
+pure x = Ternary x Nil Nil Nil
+fs <*> xs = tconcmap (\f -> fmap f xs) fs
+

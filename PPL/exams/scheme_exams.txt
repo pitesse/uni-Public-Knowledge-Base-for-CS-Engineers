@@ -1,0 +1,730 @@
+SCHEME
+
+Define a pure function (i.e. without using procedures with side effects, such as set!) which takes a multi-level list, i.e. a list that may contain any level of lists, and converts it into a data structure where each list is converted into a vector. 
+
+E.g.
+The result of (multi-list->vector '(1 2 (3 4) (5 (6)) "hi" ((3) 4))))
+should be: '#(1 2 #(3 4) #(5 #(6)) "hi" #(#(3) 4))
+
+
+
+SOLUTIONS
+
+1)
+(define (multi-list->vector lst)
+  (cond
+    ((not (list? lst)) lst)
+    ((null? (filter list? lst)) (apply vector lst))
+    (else (apply vector (map multi-list->vector lst)))))
+
+Ex 1
+SCHEME: 
+Write a function 'depth-encode' that takes in input a list possibly containing
+other lists at multiple nesting levels, and returns it as a flat list where
+each element is paired with its nesting level in the original list.
+
+E.g. (depth-encode '(1 (2 3) 4 (((5) 6 (7)) 8) 9 (((10))))) 
+returns
+((0 . 1) (1 . 2) (1 . 3) (0 . 4) (3 . 5) (2 . 6) (3 . 7) (1 . 8) (0 . 9) (3 . 10))
+
+(define (depth-encode ls)
+  (define (enc-aux l)
+    (cond ((null? l) l)
+          ((list? (car l))
+           (append (map (λ (nx) (cons (+ (car nx) 1) (cdr nx)))
+                        (enc-aux (car l)))
+                   (enc-aux (cdr l))))
+           (else (cons (cons 0 (car l)) (enc-aux (cdr l))))))
+  (enc-aux ls))
+
+  Exercise 1, Scheme (10 pts)
+Define a function mix which takes a variable number of arguments x0 x1 x2 ... xn, the first one a function,
+and returns the list (x1 (x2 ... (x0(x1) x0(x2) ... x0(xn)) xn) xn-1) ... x1).
+E.g.
+(mix (lambda (x) (* x x)) 1 2 3 4 5)
+returns: '(1 (2 (3 (4 (5 (1 4 9 16 25) 5) 4) 3) 2) 1)
+
+Es 1
+(define (f g . L)
+(foldr (lambda (x y)
+(list x y x))
+(map g L)
+L))
+
+Exercise 1, Scheme (11 pts)
+Define a defun construct like in Common Lisp, where (defun f (x1 x2 ...) body) is used for defining a
+function f with parameters x1 x2 ....
+Every function defined in this way should also be able to return a value x by calling (ret x).
+
+s 1
+(define ret-store '())
+(define (ret v)
+((car ret-store) v))
+(define-syntax defun
+(syntax-rules ()
+((_ fname (var ...) body ...)
+(define (fname var ...)
+(let ((out (call/cc (lambda (c)
+(set! ret-store (cons c ret-store))
+body ...))))
+(set! ret-store (cdr ret-store))
+out)))))
+
+Exercise 1, Scheme (13 pts)
+1) Define a procedure which takes a natural number n and a default value, and creates a n by n matrix
+filled with the default value, implemented through vectors (i.e. a vector of vectors).
+2) Let S = {0, 1, ..., n-1} x {0, 1, ..., n-1} for a natural number n. Consider a n by n matrix M, stored in a
+vector of vectors, containing pairs (x,y) ∈ S, as a function from S to S (e.g. f(2,3) = (1,0) is represented
+by M[2][3] = (1,0)). Define a procedure to check if M defines a bijection (i.e. a function that is both
+injective and surjective).
+
+Es 1
+(define (create-matrix size default)
+(define vec (make-vector size #f))
+(let loop ((i 0))
+(if (= i size)
+vec
+(begin
+(vector-set! vec i (make-vector size default))
+(loop (+ 1 i))))))
+
+Exercise 1, Scheme (10 pts)
+Define a new construct called block-then which creates two scopes for variables, declared after the
+scopes, with two different binding. E.g. the evaluation of the following code:
+(block
+((displayln (+ x y))
+(displayln (* x y))
+(displayln (* z z)))
+then
+((displayln (+ x y))
+(displayln (* z x)))
+where (x <- 12 3)(y <- 8 7)(z <- 3 2))
+should show on the screen:
+20
+96
+9
+10
+6
+
+Es 1
+(define-syntax block
+(syntax-rules (where then <-)
+((_ (e1 ...)
+then
+(e2 ...)
+where (v <- a b) ...)
+(begin
+(let ((v a) ...)
+e1 ...)
+(let ((v b) ...)
+e2 ...)))))
+
+Exercise 1, Scheme (8 pts)
+Consider the following code:
+(define (r x y . s)
+(set! s (if (cons? s) (car s) 1))
+(lambda ()
+(if (< x y)
+(let ((z x))
+(set! x (+ s x))
+z)
+y)))
+1. 2. What can we use r for? Describe how it works and give some useful examples of its usage.
+It makes sense to create a version of r without the y parameter? If the answer is yes, implement
+such version; if no, explain why.
+
+Es 1
+It is a generator implemented as a closure, which returns the numbers from x to y with step s (+1 if s is not defined). When y
+is reached, it returns it indefinitely.
+Yes, y is the upper limit and we could drop it:
+(define (r1 x . s)
+(set! s (if (cons? s) (car s) 1))
+(lambda ()
+(let ((z x))
+(set! x (+ s x))
+z)))
+
+Exercise 1, Scheme (10 pts)
+Define a list-to-compose pure function, which takes a list containing functions of one argument and
+returns their composition.
+E.g. (list-to-compose (list f g h)) is the function f(g(h(x)).
+
+Es 1
+(define (list-to-compose lst)
+(lambda (x)
+(foldr (lambda (y acc)
+(y acc)) x lst)))
+
+Exercise 1, Scheme (10 pts)
+Consider the technique “closures as objects” as seen in class, where a closure assumes the role of a class.
+In this technique, the called procedure (which works like a class in OOP) returns a closure which is
+essentially the dispatcher of the object.
+Define the define-dispatcher macro for generating the dispatcher in an automatic way, as illustrated by
+the following example:
+(define (make-man)
+(let ((p (make-entity))
+(name "man"))
+(define prefix+name
+(lambda (prefix)
+(string-append prefix name)))
+(define change-name
+(lambda (new-name)
+(set! name new-name)))
+(define-dispatcher methods: (prefix+name change-name) parent: p)))
+where p is the parent of the current instance of class man, and make-entity is its constructor.
+If there is no inheritance (or it is a base class), define-dispatcher can be used without the parent: p part.
+Then, an instance of class man can be created and its methods can be called as follows:
+> (define carlo (make-man))
+> (carlo 'change-name "Carlo")
+> (carlo 'prefix+name "Mr. ")
+"Mr. Carlo"
+
+Es 1
+(define (unknown-method ls)
+(error "Unknown method" (car ls)))
+(define-syntax define-dispatcher
+(syntax-rules (methods: parent:)
+((_ methods: (mt ...) parent: p)
+(lambda (message . args)
+(case message
+((mt) (apply mt args))
+...
+(else (apply p (cons message args))))))
+((_ methods: mts)
+(define-dispatcher methods: mts parent: unknown-method))))
+
+Exercise 1, Scheme (10 pts)
+We want to implement a version of call/cc, called store-cc, where the continuation is called only once and
+it is implicit, i.e. we do not need to pass a variable to the construct to store it. Instead, to run the
+continuation, we can use the associated construct run-cc (which may take parameters). The composition
+of store-cc must be managed using in the standard last-in-first-out approach.
+E.g. if we run:
+(define (test)
+(define x 0)
+(store-cc
+(displayln "here")
+(set! x (+ 1 x)))
+(displayln x)
+(set! x (+ 1 x))
+x)
+(test)
+we will get:
+here
+1
+2
+and if we call (run-cc)
+we get:
+2
+3
+and the continuation is discarded.
+
+Es 1
+(define *stored-cc* '())
+(define-syntax store-cc
+(syntax-rules ()
+((_ e ...)
+(call/cc (lambda (k)
+(set! *stored-cc* (cons k *stored-cc*))
+e ...)))))
+(define (run-cc . v)
+(let ((k (car *stored-cc*)))
+(set! *stored-cc* (cdr *stored-cc*))
+(apply k v)))
+
+Exercise 1, Scheme (10 pts)
+We want to implement a for-each/cc procedure which takes a condition, a list and a body and performs a for-each.
+The main difference is that, when the condition holds for the current value, the continuation of the body is stored in
+a global queue of continuations. We also need an auxiliary procedure, called use-cc, which extracts and call the
+oldest stored continuation in the global queue, discarding it.
+E.g. if we run:
+(for-each/cc odd?
+'(1 2 3 4)
+Then, if we run: (use-scc), we will get on screen:
+2
+(lambda (x) (displayln x)))
+3
+two continuations corresponding to the values 1 and 3
+4
+will be stored in the global queue.
+
+Ex 1
+(define *scc* '())
+(define (use-cc)
+(when (cons? *scc*)
+(let ((c (car *scc*)))
+(set! *scc* (cdr *scc*))
+(c))))
+(define (for-each/cc cnd L body)
+(when (cons? L)
+(let ((x (car L)))
+(call/cc (lambda (c)
+(when (cnd x)
+(set! *scc* (append *scc* (list c))))
+(body x)))
+(for-each/cc cnd (cdr L) body))))
+
+Exercise 1, Scheme (10 pts)
+Consider the following For construct, as defined in class:
+(define-syntax For
+(syntax-rules (from to break: do)
+((_ var from min to max break: break-sym
+do body ...)
+(let* ((min1 min)
+(max1 max)
+(inc (if (< min1 max1) + -)))
+(call/cc (lambda (break-sym)
+(let loop ((var min1))
+body ...
+(unless (= var max1)
+(loop (inc var 1))))))))))
+Define a fix to the above definition, to avoid to introduce in the macro definition the special break symbol break-
+sym, by providing a construct called break. E.g.
+(For i from 1 to 10
+do
+(displayln i)
+(when (= i 5)
+(break #t)))
+will return #t after displaying the numbers from 1 to 5.
+
+Ex 1
+(define exit-store '())
+(define (break v)
+((car exit-store) v))
+(define-syntax For+
+(syntax-rules (from to do)
+((_ var from min to max
+do body ...)
+(let* ((min1 min)
+(max1 max)
+(inc (if (< min1 max1) + -)))
+(let ((v (call/cc (lambda (break)
+(set! exit-store (cons break exit-store))
+(let loop ((var min1))
+body ...
+(unless (= var max1)
+(loop (inc var 1))))))))
+(set! exit-store (cdr exit-store))
+v)))))
+
+Exercise 1, Scheme (10 pts)
+Write a function, called fold-left-right, that computes both fold-left and fold-right, returning them in a pair. Very
+important: the implementation must be one-pass, for efficiency reasons, i.e. it must consider each element of the
+input list only once; hence it is not correct to just call Scheme’s fold-left and -right.
+Example: (fold-left-right string-append "" '("a" "b" "c")) is the pair ("cba" . "abc").
+
+Ex 1
+(define (fold-left-right f i l)
+(let loop ((left i)
+(right (lambda (x) x))
+(xs l))
+(if (null? xs)
+(cons left (right i))
+(loop (f (car xs) left)
+(lambda (x)
+(right (f (car xs) x)))
+(cdr xs)))))
+
+Exercise 1, Scheme (11 pts)
+Define a let** construct that behaves like the standard let*, but gives to variables provided without a binding the
+value of the last defined variable. It also contains a default value, stated by a special keyword def:, to be used if the
+first variable is given without binding.
+For example:
+(let** def: #f
+(a (b 1) (c (+ b 1)) d (e (+ d 1)) f)
+(list a b c d e f))
+should return '(#f 1 2 2 3 3), because a assumes the default value #f, while d = c and f = e.
+
+Ex 1
+(define-syntax let**
+(syntax-rules (def:)
+((_ def: v (var) istr ...)
+((lambda (var) istr ...)
+v))
+((_ def: v ((var val)) istr ...)
+((lambda (var) istr ...)
+val))
+((_ def: v ((var val) . rest) istr ...)
+((lambda (var)
+(let** def: val rest istr ...))
+val))
+((_ def: v (var . rest) istr ...)
+((lambda (var)
+(let** def: v rest istr ...))
+v))))
+
+Exercise 1, Scheme (11 pts)
+1. Design a construct to define multiple functions with the same number of arguments at the same time. The
+proposed syntax is the following:
+(multifun <list of function names> <list of parameters> <list of bodies>).
+E.g. (multifun (f g) (x)
+((+ x x x)
+(* x x)))
+defines the two functions f with body (+ x x x) and g with body (* x x), respectively.
+2. Would be possible to define something similar, but using a procedure and lambda functions instead of a
+macro? If yes, do it; if no, explain why.
+
+Ex 1
+1.
+(define-syntax multifun
+(syntax-rules ()
+((_ (f) (x ...) (b))
+(define (f x ...) b))
+((_ (f . fs) (x ...) (b . bs))
+(begin
+(define (f x ...) b)
+(multifun fs (x ...) bs)))))
+
+Exercise 1, Scheme (11 pts)
+Consider the for with break as seen in class and reported here for your convenience:
+(define *exit-store* '())
+(define (break v) ((car *exit-store*) v))
+(define-syntax For
+(syntax-rules (from to do)
+((_ var from min to max do body ...)
+(let* ((min1 min)
+(max1 max)
+(inc (if (< min1 max1) + -)))
+(let ((v (call/cc
+(lambda (k)
+(set! *exit-store* (cons k *exit-store*))
+(let loop ((var min1))
+body ...
+(unless (= var max1)
+(loop (inc var 1))))))))
+(set! *exit-store* (cdr *exit-store*))
+v)))))
+Define an extension of this construct, to be able to use in it also a continue command, with the same semantics as
+in C and Java, clearly explaining your idea.
+
+Ex 1
+The main idea is to use also a continuation inside the loop: the outer continuation is used for the break, while the inner
+covers the continue. Of course, we need to add another store for the inner continuations.
+(define *cont-store* '())
+(define (continue)
+((car *cont-store*)))
+(define (break v)
+(set! *cont-store* (cdr *cont-store*))
+((car *exit-store*) v))
+(define-syntax For
+(syntax-rules (from to do)
+((_ var from min to max
+do body ...)
+(let* ((min1 min)
+(max1 max)
+(inc (if (< min1 max1) + -)))
+(let ((v (call/cc
+(lambda (k)
+(set! *exit-store*
+(cons k *exit-store*))
+(let loop ((var min1))
+(call/cc
+(lambda (cont)
+(set! *cont-store*
+(cons cont *cont-store*))
+body ...))
+(set! *cont-store* (cdr *cont-store*))
+(unless (= var max1)
+(loop (inc var 1))))))))
+(set! *exit-store* (cdr *exit-store*))
+v)))))
+
+Exercise 1, Scheme (11 pts)
+Consider the following data structure, written in Haskell:
+data Expr a = Var a | Val Int | Op (Expr a) (Expr a)
+instance Functor Expr where
+fmap _ (Val x) = Val x
+fmap g (Var x) = Var (g x)
+fmap g (Op a b) = Op (fmap g a) (fmap g b)
+instance Applicative Expr where
+pure = Var
+_ <*> Val x = Val x
+Val x <*> _ = Val x
+Var f <*> Var x = Var (f x)
+Var f <*> Op x y = Op (fmap f x) (fmap f y)
+Op f g <*> x = Op (f <*> x) (g <*> x)
+instance Monad Expr where
+Val x >>= _ = Val x
+Var x >>= f = f x
+Op a b >>= f = Op (a >>= f) (b >>= f)
+Define an analogous in Scheme, with all the previous operations, where the data structures are encoded as lists –
+e.g. Op (Val 0) (Var 1) is represented in Scheme as ‘(Op (Val 0) (Var 1)).
+
+Ex 1
+;; Constructors
+(define (var x) (list 'Var x))
+(define (val x) (list 'Val x))
+(define (op x y) (list 'Op x y))
+;; predicates
+(define (var? x) (eq? 'Var (car x)))
+(define (val? x) (eq? 'Val (car x)))
+(define (op? x) (eq? 'Op (car x)))
+;; Functor
+(define (fmap f e)
+(cond
+((val? e) e)
+((var? e)
+(let ((x (cadr e)))
+(var (f x))))
+((op? e) (let ((x (cadr e))
+(y (caddr e)))
+(op (fmap f x) (fmap f y))))))
+;; Applicative
+(define pure var)
+(define (<*> x y)
+(cond
+((val? y) y)
+((val? x) x)
+((var? x)
+(let ((f (cadr x)))
+(if (var? y)
+(var (f (cadr y)))
+(let ((a (cadr y))
+(b (caddr y)))
+(op (fmap f a)(fmap f b))))))
+((op? x) (let ((a (cadr x))
+(b (caddr x)))
+(op (<*> a y)(<*> b y))))))
+;; Monad
+(define (>>= x y)
+(cond
+((val? x) x)
+((var? x) (y (cadr x)))
+((op? x) (let ((a (cadr x))
+(b (caddr x)))
+(op (>>= a y)(>>= b y))))))
+
+Exercise 1, Scheme (10 pts)
+Define a new construct, called let-cond, which works like a conditional let. The basic syntax is like:
+(let-cond ((condition bindings then-part) …) else-part), where the semantics is the following:
+1) The then-part corresponding to the first condition that is true is executed. No other code is executed in the
+construct.
+2) If all conditions are false, the else-part is executed.
+For example:
+(let-cond
+[((> 5 13)
+[(a 10) (b 20)]
+(+ a b)) ; then-body 1
+((= 5 5)
+[(c 3) (d 4)]
+(+ c d))] ; then-body 2
+"all conditions false")) ; else-body
+should return 7.
+
+Ex 1
+(define-syntax let-cond
+(syntax-rules ()
+((_ ((condition bindings then-body) ...)
+else-body)
+(cond
+(condition
+(let bindings
+then-body))
+...
+(else
+else-body)))))
+
+Exercise 1, Scheme (11 pts)
+Define a new construct, called let-cond+, which works like a conditional let. The basic syntax is the following:
+(let-cond+ ((condition bindings then-part) …) else-part).
+Semantics:
+1) The then-parts corresponding to all the conditions that are true are executed in sequence.
+2) If all conditions are false, then the else-part is executed.
+3) The returned value is the one of the last condition which is true, or the evaluation of the else-part.
+For example, the next code shows “hello” on the screen, and returns 7:
+(let-cond+
+(((< 5 13) ; condition
+((a 10)) ; bindings
+(begin (displayln "hello") a)) ; then-part
+((= 5 5) ; condition
+((b 3) ; bindings
+(c 4))
+(+ c b))) ; then-part
+"all conditions false") ; else-part
+
+Ex 1
+(define-syntax let-cond+
+(syntax-rules ()
+((_ ((condition bindings then-body) ...)
+else-body)
+(let ((flag #f)
+(result #f))
+(when condition
+(set! result
+(let bindings
+(set! flag #t)
+then-body)))
+...
+(if flag
+result
+else-body)))))
+
+Exercise 1, Scheme (11 pts)
+Consider the delay/force construct used to implement call-by-need. Define an extension of the construct by adding
+the concept of a master promise: other promises could be created and linked to a master promise.
+When the master promise is evaluated, all its linked promises are evaluated too.
+In particular, we need the following constructs:
+1. (delay-master <expression>) to create a master promise, and
+2. (linked-delay <master> <expression>) to create a linked promise.
+Here’s the implementation of the delay/force construct seen in class:
+(struct promise
+(define (force prom)
+(proc ; thunk or value
+(cond
+value?) ; already evaluated?
+; is it already a value?
+#:mutable)
+((not (promise? prom)) prom)
+; is it an evaluated promise?
+(define-syntax delay
+(syntax-rules ()
+((_ (expr ...))
+(promise (lambda ()
+(expr ...))
+#f))))
+((promise-value? prom) (promise-proc prom))
+(else
+(set-promise-proc! prom
+((promise-proc prom)))
+(set-promise-value?! prom #t)
+(promise-proc prom))))
+
+Ex 1
+(struct promise-master promise
+((link #:mutable)))
+(define-syntax delay-master
+(syntax-rules ()
+((_ (expr ...)) (promise-master (lambda ()
+(expr ...))
+#f '()))))
+(define-syntax linked-delay
+(syntax-rules ()
+((_ master (expr ...))
+(let ((p (promise (lambda ()
+(expr ...))
+#f)))
+(when (promise-master? master)
+(set-promise-master-link! master (cons p (promise-master-link master))))
+p))))
+(define (force prom)
+(cond
+((not (promise? prom)) prom)
+((promise-value? prom) (promise-proc prom))
+(else
+(set-promise-proc! prom
+((promise-proc prom)))
+(set-promise-value?! prom #t)
+(when (promise-master? prom)
+(for-each (lambda (x)
+(force x))
+(promise-master-link prom)))
+(promise-proc prom))))
+
+Exercise 1, Scheme (11 pts)
+Consider a binary tree encoded as a list, where its first element is the current node, its second element contains the
+left sub-tree and the third element the right sub-tree. E.g. (1 (2 (4) (5)) (3 (6) (7))) encodes the tree:
+1
+/ \
+2 3
+/ \ / \
+4 5 6 7
+Define a tail recursive procedure which takes a tree and returns the list obtained by traversing the tree breadth first.
+In the example, the resulting list must be (1 2 3 4 5 6 7)
+
+Ex 1
+(define (tree2listTR T)
+(define (left-right T)
+(if (or (not (pair? T))(null? (cdr T)))
+'()
+(if (null? (cddr T))
+(list (cadr T))
+(list (cadr T)(caddr T)))))
+(define (helper Q R)
+(if (null? Q)
+(foldl cons '() R) ; reverse
+(let ((t (car Q)))
+(helper (append (cdr Q)
+(left-right t))
+(cons (car t) R))))) ; in reverse order, to avoid append
+(helper (list T) '()))
+
+Exercise 1, Scheme (11 pts)
+Consider the named let construct of Scheme. Implement it as a nlet macro without using the built-in version of the
+construct.
+
+Ex 1
+(define-syntax nlet
+(syntax-rules ()
+((_ name ((x v) ...) body ...)
+(begin
+(define (name x ...)
+body ...)
+(name v ...)))))
+
+Exercise 1, Scheme (11 pts)
+We want to implement a version of call/cc, called store-named-cc, where the continuation is given a name (a
+symbol) and is implicit, i.e. we do not need to pass a variable to the construct to store the continuation,
+e.g. (store-named-cc ‘stuff (+ x 1)), where stuff is the name that we want to use for the continuation.
+To run the continuation, we can use the associated construct run-named-cc name, which may take other
+parameters, if the continuation requires them.
+
+Ex 1
+(define *stored-named-cc* (make-hash))
+(define-syntax store-named-cc
+(syntax-rules ()
+((_ name e ...)
+(call/cc (lambda (k)
+(display 'hello)
+(hash-set! *stored-named-cc* name k)
+e ...)))))
+(define (run-named-cc name . v)
+(let ((k (hash-ref *stored-named-cc* name)))
+(apply k v)))
+
+Exercise 1, Scheme
+Define a function which takes a list (containing lists of any depth), and checks if every list and sub-list contains its
+own length. E.g. (contains-length? '(3 (2 3) (2 (1 2)))) should return #t, while (contains-length? '(3 1 (2 3) (1 (2))))
+is #f.
+
+Ex 1
+(define (contains-length? l)
+(and (list? l)
+(member (length l) l)
+(all? contains-length? (filter list? l))))
+(define (all? pred lst)
+(null? (filter (lambda (x)
+(not (pred x))) lst)))
+
+Exercise 1, Scheme
+Define a pure function (without using side effects such as set!) which takes a multi-level list, i.e. a list that may
+contain any level of sublists, and converts it into a data structure where:
+• Every single level list is converted into a string, formed by concatenating the string representations of its
+elements.
+• If an element is itself a list, it is recursively converted.
+• Non-string elements are converted to strings using number->string or symbol->string as
+appropriate.
+For example: (list->string-tree '(1 (2 3) (a (b c))))
+("1" "23" ("a" "bc"))
+
+Ex 1
+(define (atom->string x)
+(cond ((number? x) (number->string x))
+((symbol? x) (symbol->string x))
+((string? x) x)
+(else (error "Unsupported type" x))))
+(define (flat-list? lst)
+(or (not (list? lst))
+(null? (filter list? lst))))
+(define (list->string-tree lst)
+(cond
+((null? lst) "")
+((and (list? lst) ;; flat-list
+(null? (filter list? lst)))
+(apply string-append (map atom->string lst)))
+((list? lst)
+(map (lambda (elem)
+(if (list? elem)
+(list->string-tree elem)
+(atom->string elem)))
+lst))
+(else (atom->string lst))))
+
