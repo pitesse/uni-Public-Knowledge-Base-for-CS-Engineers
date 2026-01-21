@@ -57,7 +57,6 @@ filtermap(PrePred, MapFunc, PostPred, InputList) ->
     %% 3. Filter out 'none' values
     lists:filter(fun(Val) -> Val =/= none end, RawResults).
 
-
 % filtermap(List, Func, Pred1, Pred2) ->
 %     Parent = self(),
 %     Filter = spawn(?MODULE, filter, [Parent, List, Pred1]),
